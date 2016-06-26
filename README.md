@@ -1,4 +1,4 @@
-# gologi
+# gologir
 
 A simple LLRP-based logical reader mock for RFID Tags.
 

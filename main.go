@@ -12,6 +12,11 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
+)
+
+const (
+	BUFSIZE   = 512
 )
 
 var llrpHost string
@@ -92,7 +97,7 @@ func buildEPCDataParameter(length int64, epcLengthBits int64, epc []byte) []byte
 func buildC1G2ReadOpSpecResultParameter(readData []byte) []byte {
 	buf := new(bytes.Buffer)
 	var data = []interface{}{
-		uint16(349), // Rsvd+Type=349
+		uint16(349), // Rsvd+Type=
 		uint16(11),  // Length
 		uint8(0),    // Result
 		uint16(9),   // OpSpecID
@@ -112,7 +117,7 @@ func buildTagReportDataParameter(epcDataParameter []byte,
 	opSpecResultParameter []byte) []byte {
 	tagReportDataLength := len(epcDataParameter) +
 		len(peakRSSIParameter) + len(airProtocolTagDataParameter) +
-		len(opSpecResultParameter) + 4 // Rsvd+Type+length=32bits
+		len(opSpecResultParameter) + 4 // Rsvd+Type+length=32bits=4bytes
 	buf := new(bytes.Buffer)
 	var data = []interface{}{
 		uint16(240),                 // Reserved+Type=240 (TagReportData parameter)
@@ -221,7 +226,6 @@ func main() {
 		fmt.Printf("% x\n", roAccessReportBuffer.Bytes())
 
 		// Wait until ACK received
-		buf := make([]byte, BUFSIZE)
-		_, err := conn.Read(buf)
+		time.Sleep(time.Millisecond)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"encoding/binary"
 	"io"
 	"net"
 	"os"
@@ -12,6 +13,10 @@ const (
 	CONN_PORT = "5084"
 	CONN_TYPE = "tcp"
 	BUFSIZE   = 512
+	HEADER_ROAR = 1085
+	HEADER_REN  = 1087
+	HEADER_SRC = 1027
+	BEADER_SRCR = 1037
 )
 
 func main() {
@@ -44,17 +49,29 @@ func handleRequest(conn net.Conn) {
 		// Read the incoming connection into the buffer.
 		reqLen, err := conn.Read(buf)
 		if err == io.EOF {
-			conn.Close()
-			break
+			// Close the connection when you're done with it.
+			//conn.Close()
+			//break
+			return
 		} else if err != nil {
 			fmt.Println("Error reading:", err.Error())
 			fmt.Println("reqLen: " + string(reqLen))
+			conn.Close()
+			break
 		}
-		fmt.Printf("Packet size: %v\n", reqLen)
-		fmt.Printf("% x\n", buf[:reqLen])
+
+		header := binary.BigEndian.Uint16(buf[:2])
+		if header == HEADER_REN {
+			fmt.Println(">>> READER_EVENT_NOTIFICATION")
+		} else if header == HEADER_ROAR {
+			fmt.Println(">>> RO_ACCESS_REPORT")
+			fmt.Printf("Packet size: %v\n", reqLen)
+			fmt.Printf("% x\n", buf[:reqLen])
+		} else {
+			fmt.Printf("Header: %v\n", header)
+		}
 
 		// Send a response back to person contacting us.
 		//conn.Write([]byte("Message received.\r\n"))
-		// Close the connection when you're done with it.
 	}
 }
