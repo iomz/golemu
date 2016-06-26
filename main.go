@@ -188,7 +188,12 @@ func buildTag(record []string) (Tag, error) {
 	return tag, nil
 }
 
-func emit(conn net.Conn, r *csv.Reader) {
+func readTagsFromCSV(csvfile string) []*Tag {
+	csv_in, err := ioutil.ReadFile(csvfile)
+	check(err)
+	r := csv.NewReader(strings.NewReader(string(csv_in)))
+
+	tags := []*Tag{}
 	for {
 		record, err := r.Read()
 		// If reached at the end
@@ -202,40 +207,55 @@ func emit(conn net.Conn, r *csv.Reader) {
 		if err != nil {
 			continue
 		}
+		tags = append(tags, &tag)
+	}
+	return tags
+}
 
-		// PeakRSSIParameter
-		peakRSSIParameter :=
-			buildPeakRSSIParameter()
+func emit(conn net.Conn, tags []*Tag) {
+	for {
+		for _, tag := range tags {
+			// PeakRSSIParameter
+			peakRSSIParameter :=
+				buildPeakRSSIParameter()
 
-		// AirProtocolTagDataParameter
-		airProtocolTagDataParameter :=
-			buildC1G2PCParameter(tag.pcBits)
+			// AirProtocolTagDataParameter
+			airProtocolTagDataParameter :=
+				buildC1G2PCParameter(tag.pcBits)
 
-		// EPCDataParameter
-		epcDataParameter :=
-			buildEPCDataParameter(tag.length, tag.epcLengthBits, tag.epc)
+			// EPCDataParameter
+			epcDataParameter :=
+				buildEPCDataParameter(tag.length, tag.epcLengthBits, tag.epc)
 
-		// OpSpecResultParameter
-		opSpecResultParameter :=
-			buildC1G2ReadOpSpecResultParameter(tag.readData)
+			// OpSpecResultParameter
+			opSpecResultParameter :=
+				buildC1G2ReadOpSpecResultParameter(tag.readData)
 
-		// Merge them into TagReportData
-		tagReportDataParameter :=
-			buildTagReportDataParameter(epcDataParameter,
-				peakRSSIParameter, airProtocolTagDataParameter,
-				opSpecResultParameter)
+			// Merge them into TagReportData
+			tagReportDataParameter :=
+				buildTagReportDataParameter(epcDataParameter,
+					peakRSSIParameter, airProtocolTagDataParameter,
+					opSpecResultParameter)
 
-		// Append TagReportData to ROAccessReport
-		roAccessReportBuffer :=
-			bufferROAccessReport(tagReportDataParameter)
+			/*
 
-		// Send
-		fmt.Fprint(conn, roAccessReportBuffer)
-		fmt.Printf("%v\n", roAccessReportBuffer.Len())
-		fmt.Printf("% x\n", roAccessReportBuffer.Bytes())
+				TODO: Here, maybe stack more TRDs to ROAR
 
-		// Wait until ACK received
-		time.Sleep(time.Millisecond)
+			*/
+
+			// Append TagReportData to ROAccessReport
+			roAccessReportBuffer :=
+				bufferROAccessReport(tagReportDataParameter)
+
+			// Send
+			fmt.Fprint(conn, roAccessReportBuffer)
+			fmt.Printf("%v\n", roAccessReportBuffer.Len())
+			fmt.Printf("% x\n", roAccessReportBuffer.Bytes())
+
+			// Wait until ACK received
+			time.Sleep(time.Millisecond)
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 }
 
@@ -248,12 +268,10 @@ func main() {
 	check(err)
 
 	// Read virtual tags from a csv file
-	csv_in, err := ioutil.ReadFile("tags.csv")
-	check(err)
-	r := csv.NewReader(strings.NewReader(string(csv_in)))
+	tags := readTagsFromCSV("tags.csv")
 
 	// Emit LLRP
-	go emit(conn, r)
+	go emit(conn, tags)
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)
