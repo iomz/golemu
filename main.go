@@ -273,10 +273,38 @@ func bufferSetReaderConfig() *bytes.Buffer {
 	return buf
 }
 
-func Use(vals ...interface{}) {
-	for _, val := range vals {
-		_ = val
+func buildLLRPStatusParameter() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(287), // Rsvd+Type=287
+		uint16(8),   // Length
+		uint8(0),    // StatusCode=M_Success(0)
+		uint16(0),   // ErrorDescriptionByteCount=0
 	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func bufferSetReaderConfigResponse() *bytes.Buffer {
+	llrpStatusParameter := buildLLRPStatusParameter()
+	setReaderConfigResponseLength :=
+		len(llrpStatusParameter) + 10 // Rsvd+Ver+Type+Length+ID+R+Rsvd->80bits=10bytes
+	messageID += 1
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_SRCR),                   // Rsvd+Ver+Type=13 (SET_READER_CONFIG_RESPONSE)
+		uint32(setReaderConfigResponseLength), // Length
+		uint32(messageID),                     // ID
+		llrpStatusParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf
 }
 
 func buildTag(record []string) (Tag, error) {
@@ -384,6 +412,8 @@ func main() {
 	fmt.Fprint(conn, bufferReaderEventNotification())
 	time.Sleep(time.Millisecond)
 	fmt.Fprint(conn, bufferSetReaderConfig())
+	time.Sleep(time.Millisecond)
+	fmt.Fprint(conn, bufferSetReaderConfigResponse())
 
 	// Read virtual tags from a csv file
 	tags := readTagsFromCSV("tags.csv")
