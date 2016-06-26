@@ -35,7 +35,7 @@ const (
 	HEADER_ROAR = 1085
 	HEADER_REN  = 1087
 	HEADER_SRC  = 1027
-	BEADER_SRCR = 1037
+	HEADER_SRCR = 1037
 )
 
 var llrpHost string
@@ -227,9 +227,44 @@ func bufferReaderEventNotification() *bytes.Buffer {
 	buf := new(bytes.Buffer)
 	var data = []interface{}{
 		uint16(HEADER_REN),                    // Rsvd+Ver+Type=63 (READER_EVENT_NOTIFICATION)
-		uint32(readerEventNotificationLength), // Message length
-		uint32(messageID),                     // Message ID
+		uint32(readerEventNotificationLength), // Length
+		uint32(messageID),                     // ID
 		readerEventNotificationDataParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf
+}
+
+func buildKeepaliveSpecParameter() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(220),   // Rsvd+Type=220
+		uint16(9),     // Length
+		uint8(1),      // KeepaliveTriggerType=Periodic(1)
+		uint32(10000), // TimeInterval=10000
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func bufferSetReaderConfig() *bytes.Buffer {
+	keepaliveSpecParameter := buildKeepaliveSpecParameter()
+	setReaderConfigLength :=
+		len(keepaliveSpecParameter) + 11 // Rsvd+Ver+Type+Length+ID+R+Rsvd->88bits=11bytes
+	messageID += 1
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_SRC),            // Rsvd+Ver+Type=3 (SET_READER_CONFIG)
+		uint32(setReaderConfigLength), // Length
+		uint32(messageID),             // ID
+		uint8(0),                      // RestoreFactorySetting(no=0)+Rsvd
+		keepaliveSpecParameter,
 	}
 	for _, v := range data {
 		err := binary.Write(buf, binary.BigEndian, v)
@@ -347,6 +382,8 @@ func main() {
 	check(err)
 
 	fmt.Fprint(conn, bufferReaderEventNotification())
+	time.Sleep(time.Millisecond)
+	fmt.Fprint(conn, bufferSetReaderConfig())
 
 	// Read virtual tags from a csv file
 	tags := readTagsFromCSV("tags.csv")

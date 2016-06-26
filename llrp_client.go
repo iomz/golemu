@@ -16,7 +16,7 @@ const (
 	HEADER_ROAR = 1085
 	HEADER_REN  = 1087
 	HEADER_SRC  = 1027
-	BEADER_SRCR = 1037
+	HEADER_SRCR = 1037
 )
 
 func main() {
@@ -63,6 +63,10 @@ func handleRequest(conn net.Conn) {
 		header := binary.BigEndian.Uint16(buf[:2])
 		if header == HEADER_REN {
 			fmt.Println(">>> READER_EVENT_NOTIFICATION")
+		} else if header == HEADER_SRC {
+			fmt.Println(">>> SET_READER_CONFIG")
+		} else if header == HEADER_SRCR {
+			fmt.Println(">>> SET_READER_CONFIG_RESPONSE")
 		} else if header == HEADER_ROAR {
 			fmt.Println(">>> RO_ACCESS_REPORT")
 			fmt.Printf("Packet size: %v\n", reqLen)
