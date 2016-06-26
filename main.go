@@ -9,18 +9,22 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
 type Tag struct {
-	pcBits string
-	length int64
+	pcBits        string
+	length        int64
 	epcLengthBits int64
-	epc []byte
-	readData []byte
+	epc           []byte
+	readData      []byte
 }
 
 var llrpHost string
@@ -184,19 +188,7 @@ func buildTag(record []string) (Tag, error) {
 	return tag, nil
 }
 
-func main() {
-	flag.Parse()
-
-	// Establish a connection to the llrp client
-	conn, err := net.Dial("tcp",
-		llrpHost+":"+strconv.Itoa(llrpPort))
-	check(err)
-
-	// Read virtual tags from a csv file
-	csv_in, err := ioutil.ReadFile("tags.csv")
-	check(err)
-	r := csv.NewReader(strings.NewReader(string(csv_in)))
-
+func emit(conn net.Conn, r *csv.Reader) {
 	for {
 		record, err := r.Read()
 		// If reached at the end
@@ -245,4 +237,28 @@ func main() {
 		// Wait until ACK received
 		time.Sleep(time.Millisecond)
 	}
+}
+
+func main() {
+	flag.Parse()
+
+	// Establish a connection to the llrp client
+	conn, err := net.Dial("tcp",
+		llrpHost+":"+strconv.Itoa(llrpPort))
+	check(err)
+
+	// Read virtual tags from a csv file
+	csv_in, err := ioutil.ReadFile("tags.csv")
+	check(err)
+	r := csv.NewReader(strings.NewReader(string(csv_in)))
+
+	// Emit LLRP
+	go emit(conn, r)
+
+	// Handle SIGINT and SIGTERM.
+	ch := make(chan os.Signal)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+	log.Println(<-ch)
+
+	conn.Close()
 }

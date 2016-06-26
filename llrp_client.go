@@ -1,21 +1,21 @@
 package main
 
 import (
-	"fmt"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 	"os"
 )
 
 const (
-	CONN_HOST = "0.0.0.0"
-	CONN_PORT = "5084"
-	CONN_TYPE = "tcp"
-	BUFSIZE   = 512
+	CONN_HOST   = "0.0.0.0"
+	CONN_PORT   = "5084"
+	CONN_TYPE   = "tcp"
+	BUFSIZE     = 512
 	HEADER_ROAR = 1085
 	HEADER_REN  = 1087
-	HEADER_SRC = 1027
+	HEADER_SRC  = 1027
 	BEADER_SRCR = 1037
 )
 
