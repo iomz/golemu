@@ -15,9 +15,13 @@ import (
 	"time"
 )
 
-const (
-	BUFSIZE   = 512
-)
+type Tag struct {
+	pcBits string
+	length int64
+	epcLengthBits int64
+	epc []byte
+	readData []byte
+}
 
 var llrpHost string
 var llrpPort int
@@ -158,6 +162,28 @@ func Use(vals ...interface{}) {
 	}
 }
 
+func buildTag(record []string) (Tag, error) {
+	// If the row is incomplete
+	if len(record) != 4 {
+		var t Tag
+		return t, io.EOF
+	}
+
+	pcBits := record[0]
+	length, err := strconv.ParseInt(record[1], 10, 16)
+	check(err)
+	epcLengthBits, err := strconv.ParseInt(record[2], 10, 16)
+	check(err)
+	epc, err := hex.DecodeString(record[3])
+	check(err)
+	readData, err := hex.DecodeString("a896")
+	check(err)
+
+	tag := Tag{pcBits, length, epcLengthBits, epc, readData}
+	fmt.Printf("%+v\n", tag)
+	return tag, nil
+}
+
 func main() {
 	flag.Parse()
 
@@ -179,20 +205,11 @@ func main() {
 		}
 		check(err)
 
-		// If the row is incomplete
-		if len(record) != 4 {
+		// Construct a tag read data
+		tag, err := buildTag(record)
+		if err != nil {
 			continue
 		}
-
-		pc_bits := record[0]
-		length, err := strconv.ParseInt(record[1], 10, 16)
-		check(err)
-		epcLengthBits, err := strconv.ParseInt(record[2], 10, 16)
-		check(err)
-		epc, err := hex.DecodeString(record[3])
-		check(err)
-		readData, err := hex.DecodeString("a896")
-		check(err)
 
 		// PeakRSSIParameter
 		peakRSSIParameter :=
@@ -200,15 +217,15 @@ func main() {
 
 		// AirProtocolTagDataParameter
 		airProtocolTagDataParameter :=
-			buildC1G2PCParameter(pc_bits)
+			buildC1G2PCParameter(tag.pcBits)
 
 		// EPCDataParameter
 		epcDataParameter :=
-			buildEPCDataParameter(length, epcLengthBits, epc)
+			buildEPCDataParameter(tag.length, tag.epcLengthBits, tag.epc)
 
 		// OpSpecResultParameter
 		opSpecResultParameter :=
-			buildC1G2ReadOpSpecResultParameter(readData)
+			buildC1G2ReadOpSpecResultParameter(tag.readData)
 
 		// Merge them into TagReportData
 		tagReportDataParameter :=
