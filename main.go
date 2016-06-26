@@ -27,6 +27,17 @@ type Tag struct {
 	readData      []byte
 }
 
+const (
+	CONN_HOST   = "0.0.0.0"
+	CONN_PORT   = "5084"
+	CONN_TYPE   = "tcp"
+	BUFSIZE     = 512
+	HEADER_ROAR = 1085
+	HEADER_REN  = 1087
+	HEADER_SRC  = 1027
+	BEADER_SRCR = 1037
+)
+
 var llrpHost string
 var llrpPort int
 var messageID = 1000
@@ -125,10 +136,10 @@ func buildTagReportDataParameter(epcDataParameter []byte,
 	opSpecResultParameter []byte) []byte {
 	tagReportDataLength := len(epcDataParameter) +
 		len(peakRSSIParameter) + len(airProtocolTagDataParameter) +
-		len(opSpecResultParameter) + 4 // Rsvd+Type+length=32bits=4bytes
+		len(opSpecResultParameter) + 4 // Rsvd+Type+length->32bits=4bytes
 	buf := new(bytes.Buffer)
 	var data = []interface{}{
-		uint16(240),                 // Reserved+Type=240 (TagReportData parameter)
+		uint16(240),                 // Rsvd+Type=240 (TagReportData parameter)
 		uint16(tagReportDataLength), // Length
 		epcDataParameter,
 		peakRSSIParameter,
@@ -144,14 +155,81 @@ func buildTagReportDataParameter(epcDataParameter []byte,
 
 func bufferROAccessReport(tagReportDataParameter []byte) *bytes.Buffer {
 	roAccessReportLength :=
-		len(tagReportDataParameter) + 10 // See below
+		len(tagReportDataParameter) + 10 // Rsvd+Ver+Type+Length+ID->80bits=10bytes
 	messageID += 1
 	buf := new(bytes.Buffer)
 	var data = []interface{}{
-		uint16(1085),                 // Rsvd+Ver+Type=61 (RO_ACCESS_REPORT)
+		uint16(HEADER_ROAR),          // Rsvd+Ver+Type=61 (RO_ACCESS_REPORT)
 		uint32(roAccessReportLength), // Message length
 		uint32(messageID),            // Message ID
 		tagReportDataParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf
+}
+
+func buildUTCTimeStampParameter() []byte {
+	buf := new(bytes.Buffer)
+	currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+	var data = []interface{}{
+		uint16(128), // Rsvd+Type=128
+		uint16(12),  // Length
+		currentTime, // Microseconds
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildConnectionAttemptEventParameter() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(256), // Rsvd+Type=256
+		uint16(6),   // Length
+		uint16(0),   // Status(Success=0)
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildReaderEventNotificationDataParameter() []byte {
+	utcTimeStampParameter := buildUTCTimeStampParameter()
+	connectionAttemptEventParameter := buildConnectionAttemptEventParameter()
+	readerEventNotificationDataLength := len(utcTimeStampParameter) +
+		len(connectionAttemptEventParameter) + 4 // Rsvd+Type+length=32bits=4bytes
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(246),                               // Rsvd+Type=246 (ReaderEventNotificationData parameter)
+		uint16(readerEventNotificationDataLength), // Length
+		utcTimeStampParameter,
+		connectionAttemptEventParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func bufferReaderEventNotification() *bytes.Buffer {
+	readerEventNotificationDataParameter := buildReaderEventNotificationDataParameter()
+	readerEventNotificationLength :=
+		len(readerEventNotificationDataParameter) + 10 // Rsvd+Ver+Type+Length+ID->80bits=10bytes
+	messageID += 1
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_REN),                    // Rsvd+Ver+Type=63 (READER_EVENT_NOTIFICATION)
+		uint32(readerEventNotificationLength), // Message length
+		uint32(messageID),                     // Message ID
+		readerEventNotificationDataParameter,
 	}
 	for _, v := range data {
 		err := binary.Write(buf, binary.BigEndian, v)
@@ -256,6 +334,7 @@ func emit(conn net.Conn, tags []*Tag) {
 			time.Sleep(time.Millisecond)
 		}
 		time.Sleep(100 * time.Millisecond)
+		break
 	}
 }
 
@@ -266,6 +345,8 @@ func main() {
 	conn, err := net.Dial("tcp",
 		llrpHost+":"+strconv.Itoa(llrpPort))
 	check(err)
+
+	fmt.Fprint(conn, bufferReaderEventNotification())
 
 	// Read virtual tags from a csv file
 	tags := readTagsFromCSV("tags.csv")
