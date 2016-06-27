@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/csv"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -38,29 +37,12 @@ const (
 	HEADER_SRCR = 1037
 )
 
-var llrpHost string
-var llrpPort int
 var messageID = 1000
 
 func check(e error) {
 	if e != nil {
 		panic(e)
 	}
-}
-
-func init() {
-	const (
-		defaultHost = "127.0.0.1"
-		hostUsage   = "llrp client hostname"
-		defaultPort = 5084
-		portUsage   = "port used for llrp connection"
-	)
-	flag.StringVar(&llrpHost, "host", defaultHost, hostUsage)
-	flag.StringVar(&llrpHost, "h",
-		defaultHost, hostUsage+" (shorthand)")
-	flag.IntVar(&llrpPort, "port", defaultPort, portUsage)
-	flag.IntVar(&llrpPort, "p",
-		defaultPort, portUsage+" (shorthand)")
 }
 
 func buildPeakRSSIParameter() []byte {
@@ -153,7 +135,7 @@ func buildTagReportDataParameter(epcDataParameter []byte,
 	return buf.Bytes()
 }
 
-func bufferROAccessReport(tagReportDataParameter []byte) *bytes.Buffer {
+func buildROAccessReport(tagReportDataParameter []byte) []byte {
 	roAccessReportLength :=
 		len(tagReportDataParameter) + 10 // Rsvd+Ver+Type+Length+ID->80bits=10bytes
 	messageID += 1
@@ -168,7 +150,7 @@ func bufferROAccessReport(tagReportDataParameter []byte) *bytes.Buffer {
 		err := binary.Write(buf, binary.BigEndian, v)
 		check(err)
 	}
-	return buf
+	return buf.Bytes()
 }
 
 func buildUTCTimeStampParameter() []byte {
@@ -219,7 +201,7 @@ func buildReaderEventNotificationDataParameter() []byte {
 	return buf.Bytes()
 }
 
-func bufferReaderEventNotification() *bytes.Buffer {
+func buildReaderEventNotification() []byte {
 	readerEventNotificationDataParameter := buildReaderEventNotificationDataParameter()
 	readerEventNotificationLength :=
 		len(readerEventNotificationDataParameter) + 10 // Rsvd+Ver+Type+Length+ID->80bits=10bytes
@@ -235,42 +217,7 @@ func bufferReaderEventNotification() *bytes.Buffer {
 		err := binary.Write(buf, binary.BigEndian, v)
 		check(err)
 	}
-	return buf
-}
-
-func buildKeepaliveSpecParameter() []byte {
-	buf := new(bytes.Buffer)
-	var data = []interface{}{
-		uint16(220),   // Rsvd+Type=220
-		uint16(9),     // Length
-		uint8(1),      // KeepaliveTriggerType=Periodic(1)
-		uint32(10000), // TimeInterval=10000
-	}
-	for _, v := range data {
-		err := binary.Write(buf, binary.BigEndian, v)
-		check(err)
-	}
 	return buf.Bytes()
-}
-
-func bufferSetReaderConfig() *bytes.Buffer {
-	keepaliveSpecParameter := buildKeepaliveSpecParameter()
-	setReaderConfigLength :=
-		len(keepaliveSpecParameter) + 11 // Rsvd+Ver+Type+Length+ID+R+Rsvd->88bits=11bytes
-	messageID += 1
-	buf := new(bytes.Buffer)
-	var data = []interface{}{
-		uint16(HEADER_SRC),            // Rsvd+Ver+Type=3 (SET_READER_CONFIG)
-		uint32(setReaderConfigLength), // Length
-		uint32(messageID),             // ID
-		uint8(0),                      // RestoreFactorySetting(no=0)+Rsvd
-		keepaliveSpecParameter,
-	}
-	for _, v := range data {
-		err := binary.Write(buf, binary.BigEndian, v)
-		check(err)
-	}
-	return buf
 }
 
 func buildLLRPStatusParameter() []byte {
@@ -278,7 +225,7 @@ func buildLLRPStatusParameter() []byte {
 	var data = []interface{}{
 		uint16(287), // Rsvd+Type=287
 		uint16(8),   // Length
-		uint8(0),    // StatusCode=M_Success(0)
+		uint16(0),   // StatusCode=M_Success(0)
 		uint16(0),   // ErrorDescriptionByteCount=0
 	}
 	for _, v := range data {
@@ -288,23 +235,22 @@ func buildLLRPStatusParameter() []byte {
 	return buf.Bytes()
 }
 
-func bufferSetReaderConfigResponse() *bytes.Buffer {
+func buildSetReaderConfigResponse() []byte {
 	llrpStatusParameter := buildLLRPStatusParameter()
 	setReaderConfigResponseLength :=
 		len(llrpStatusParameter) + 10 // Rsvd+Ver+Type+Length+ID+R+Rsvd->80bits=10bytes
-	messageID += 1
 	buf := new(bytes.Buffer)
 	var data = []interface{}{
 		uint16(HEADER_SRCR),                   // Rsvd+Ver+Type=13 (SET_READER_CONFIG_RESPONSE)
 		uint32(setReaderConfigResponseLength), // Length
-		uint32(messageID),                     // ID
+		uint32(0), // ID
 		llrpStatusParameter,
 	}
 	for _, v := range data {
 		err := binary.Write(buf, binary.BigEndian, v)
 		check(err)
 	}
-	return buf
+	return buf.Bytes()
 }
 
 func buildTag(record []string) (Tag, error) {
@@ -325,7 +271,6 @@ func buildTag(record []string) (Tag, error) {
 	check(err)
 
 	tag := Tag{pcBits, length, epcLengthBits, epc, readData}
-	fmt.Printf("%+v\n", tag)
 	return tag, nil
 }
 
@@ -355,7 +300,11 @@ func readTagsFromCSV(csvfile string) []*Tag {
 
 func emit(conn net.Conn, tags []*Tag) {
 	for {
+		// Check the connection and disconnect
+
 		for _, tag := range tags {
+			fmt.Printf("%+v\n", tag)
+
 			// PeakRSSIParameter
 			peakRSSIParameter :=
 				buildPeakRSSIParameter()
@@ -385,46 +334,76 @@ func emit(conn net.Conn, tags []*Tag) {
 			*/
 
 			// Append TagReportData to ROAccessReport
-			roAccessReportBuffer :=
-				bufferROAccessReport(tagReportDataParameter)
+			roAccessReport :=
+				buildROAccessReport(tagReportDataParameter)
 
 			// Send
-			fmt.Fprint(conn, roAccessReportBuffer)
-			fmt.Printf("%v\n", roAccessReportBuffer.Len())
-			fmt.Printf("% x\n", roAccessReportBuffer.Bytes())
+			conn.Write(roAccessReport)
 
 			// Wait until ACK received
 			time.Sleep(time.Millisecond)
 		}
-		time.Sleep(100 * time.Millisecond)
-		break
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// Handles incoming requests.
+func handleRequest(conn net.Conn) {
+	// Make a buffer to hold incoming data.
+	buf := make([]byte, BUFSIZE)
+	// Read the incoming connection into the buffer.
+	reqLen, err := conn.Read(buf)
+	if err == io.EOF {
+		// Close the connection when you're done with it.
+		return
+	} else if err != nil {
+		fmt.Println("Error reading:", err.Error())
+		fmt.Println("reqLen: " + string(reqLen))
+		conn.Close()
+	}
+
+	header := binary.BigEndian.Uint16(buf[:2])
+	if header == HEADER_SRC {
+		fmt.Println(">>> SET_READER_CONFIG")
+		conn.Write(buildSetReaderConfigResponse())
+		// Read virtual tags from a csv file
+		tags := readTagsFromCSV("tags.csv")
+		// Emit LLRP
+		go emit(conn, tags)
+	} else {
+		fmt.Printf("Unknown header: %v\n", header)
 	}
 }
 
 func main() {
-	flag.Parse()
+	// Listen for incoming connections.
+	l, err := net.Listen(CONN_TYPE, CONN_HOST+":"+CONN_PORT)
+	if err != nil {
+		fmt.Println("Error listening:", err.Error())
+		os.Exit(1)
+	}
+	// Close the listener when the application closes.
+	defer l.Close()
+	fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
 
-	// Establish a connection to the llrp client
-	conn, err := net.Dial("tcp",
-		llrpHost+":"+strconv.Itoa(llrpPort))
-	check(err)
+	for {
+		// Listen for an incoming connection.
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting: ", err.Error())
+			os.Exit(1)
+		}
 
-	fmt.Fprint(conn, bufferReaderEventNotification())
-	time.Sleep(time.Millisecond)
-	fmt.Fprint(conn, bufferSetReaderConfig())
-	time.Sleep(time.Millisecond)
-	fmt.Fprint(conn, bufferSetReaderConfigResponse())
+		// Send back READER_EVENT_NOTIFICATION
+		conn.Write(buildReaderEventNotification())
+		time.Sleep(time.Millisecond)
 
-	// Read virtual tags from a csv file
-	tags := readTagsFromCSV("tags.csv")
-
-	// Emit LLRP
-	go emit(conn, tags)
+		// Handle connections in a new goroutine.
+		go handleRequest(conn)
+	}
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	log.Println(<-ch)
-
-	conn.Close()
 }

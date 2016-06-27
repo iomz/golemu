@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io"
 	"net"
-	"os"
+	"strconv"
 )
 
 const (
@@ -19,39 +21,80 @@ const (
 	HEADER_SRCR = 1037
 )
 
-func main() {
-	// Listen for incoming connections.
-	l, err := net.Listen(CONN_TYPE, CONN_HOST+":"+CONN_PORT)
-	if err != nil {
-		fmt.Println("Error listening:", err.Error())
-		os.Exit(1)
-	}
-	// Close the listener when the application closes.
-	defer l.Close()
-	fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
-	for {
-		// Listen for an incoming connection.
-		conn, err := l.Accept()
-		if err != nil {
-			fmt.Println("Error accepting: ", err.Error())
-			os.Exit(1)
-		}
-		// Handle connections in a new goroutine.
-		go handleRequest(conn)
+var llrpHost string
+var llrpPort int
+var messageID = 10000
+
+func check(e error) {
+	if e != nil {
+		panic(e)
 	}
 }
 
-// Handles incoming requests.
-func handleRequest(conn net.Conn) {
+func init() {
+	const (
+		defaultHost = "127.0.0.1"
+		hostUsage   = "llrp client hostname"
+		defaultPort = 5084
+		portUsage   = "port used for llrp connection"
+	)
+	flag.StringVar(&llrpHost, "host", defaultHost, hostUsage)
+	flag.StringVar(&llrpHost, "h",
+		defaultHost, hostUsage+" (shorthand)")
+	flag.IntVar(&llrpPort, "port", defaultPort, portUsage)
+	flag.IntVar(&llrpPort, "p",
+		defaultPort, portUsage+" (shorthand)")
+}
+
+func buildKeepaliveSpecParameter() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(220),   // Rsvd+Type=220
+		uint16(9),     // Length
+		uint8(1),      // KeepaliveTriggerType=Periodic(1)
+		uint32(10000), // TimeInterval=10000
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildSetReaderConfig() []byte {
+	keepaliveSpecParameter := buildKeepaliveSpecParameter()
+	setReaderConfigLength :=
+		len(keepaliveSpecParameter) + 11 // Rsvd+Ver+Type+Length+ID+R+Rsvd->88bits=11bytes
+	messageID += 1
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_SRC),            // Rsvd+Ver+Type=3 (SET_READER_CONFIG)
+		uint32(setReaderConfigLength), // Length
+		uint32(messageID),             // ID
+		uint8(0),                      // RestoreFactorySetting(no=0)+Rsvd
+		keepaliveSpecParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func main() {
+	flag.Parse()
+
+	// Establish a connection to the llrp client
+	conn, err := net.Dial("tcp",
+		llrpHost+":"+strconv.Itoa(llrpPort))
+	check(err)
+
+	buf := make([]byte, BUFSIZE)
 	for {
-		// Make a buffer to hold incoming data.
-		buf := make([]byte, BUFSIZE)
 		// Read the incoming connection into the buffer.
 		reqLen, err := conn.Read(buf)
 		if err == io.EOF {
 			// Close the connection when you're done with it.
-			//conn.Close()
-			//break
 			return
 		} else if err != nil {
 			fmt.Println("Error reading:", err.Error())
@@ -63,8 +106,7 @@ func handleRequest(conn net.Conn) {
 		header := binary.BigEndian.Uint16(buf[:2])
 		if header == HEADER_REN {
 			fmt.Println(">>> READER_EVENT_NOTIFICATION")
-		} else if header == HEADER_SRC {
-			fmt.Println(">>> SET_READER_CONFIG")
+			conn.Write(buildSetReaderConfig())
 		} else if header == HEADER_SRCR {
 			fmt.Println(">>> SET_READER_CONFIG_RESPONSE")
 		} else if header == HEADER_ROAR {
@@ -72,10 +114,7 @@ func handleRequest(conn net.Conn) {
 			fmt.Printf("Packet size: %v\n", reqLen)
 			fmt.Printf("% x\n", buf[:reqLen])
 		} else {
-			fmt.Printf("Header: %v\n", header)
+			fmt.Printf("Unknown header: %v\n", header)
 		}
-
-		// Send a response back to person contacting us.
-		//conn.Write([]byte("Message received.\r\n"))
 	}
 }
