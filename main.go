@@ -35,9 +35,12 @@ const (
 	HEADER_REN  = 1087
 	HEADER_SRC  = 1027
 	HEADER_SRCR = 1037
+	HEADER_KA   = 1086
+	HEADER_KAA  = 1096
 )
 
 var messageID = 1000
+var keepaliveID = 80000
 
 func check(e error) {
 	if e != nil {
@@ -253,6 +256,34 @@ func buildSetReaderConfigResponse() []byte {
 	return buf.Bytes()
 }
 
+func buildKeepalive() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_KA), // Rsvd+Ver+Type=62 (KEEPALIVE)
+		uint32(10),        // Length
+		uint32(0),         // ID
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildKeepaliveAck() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_KAA), // Rsvd+Ver+Type=62 (KEEPALIVE)
+		uint32(10),         // Length
+		uint32(0),          // ID
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
 func buildTag(record []string) (Tag, error) {
 	// If the row is incomplete
 	if len(record) != 4 {
@@ -299,9 +330,9 @@ func readTagsFromCSV(csvfile string) []*Tag {
 }
 
 func emit(conn net.Conn, tags []*Tag) {
+	t := time.NewTicker(1 * time.Second)
+	count := 0
 	for {
-		// Check the connection and disconnect
-
 		for _, tag := range tags {
 			log.Printf("%+v\n", tag)
 
@@ -343,7 +374,29 @@ func emit(conn net.Conn, tags []*Tag) {
 			// Wait until ACK received
 			time.Sleep(time.Millisecond)
 		}
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-t.C:
+			count += 1
+		}
+		if count >= 10 {
+			conn.Write(buildKeepalive())
+			buf := make([]byte, BUFSIZE)
+			reqLen, err := conn.Read(buf)
+			if err == io.EOF {
+				// Close the connection when you're done with it.
+				return
+			} else if err != nil {
+				log.Println("Error reading:", err.Error())
+				log.Println("reqLen: " + string(reqLen))
+				conn.Close()
+			}
+			header := binary.BigEndian.Uint16(buf[:2])
+			if header != HEADER_KAA {
+				log.Printf("Unknown header: %v\n", header)
+				return
+			}
+			count = 0
+		}
 	}
 }
 
@@ -370,8 +423,12 @@ func handleRequest(conn net.Conn) {
 		tags := readTagsFromCSV("tags.csv")
 		// Emit LLRP
 		go emit(conn, tags)
+	} else if header == HEADER_KAA {
+		tags := readTagsFromCSV("tags.csv")
+		go emit(conn, tags)
 	} else {
 		log.Printf("Unknown header: %v\n", header)
+		return
 	}
 }
 
