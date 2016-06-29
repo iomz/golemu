@@ -303,7 +303,7 @@ func emit(conn net.Conn, tags []*Tag) {
 		// Check the connection and disconnect
 
 		for _, tag := range tags {
-			fmt.Printf("%+v\n", tag)
+			log.Printf("%+v\n", tag)
 
 			// PeakRSSIParameter
 			peakRSSIParameter :=
@@ -357,21 +357,21 @@ func handleRequest(conn net.Conn) {
 		// Close the connection when you're done with it.
 		return
 	} else if err != nil {
-		fmt.Println("Error reading:", err.Error())
-		fmt.Println("reqLen: " + string(reqLen))
+		log.Println("Error reading:", err.Error())
+		log.Println("reqLen: " + string(reqLen))
 		conn.Close()
 	}
 
 	header := binary.BigEndian.Uint16(buf[:2])
 	if header == HEADER_SRC {
-		fmt.Println(">>> SET_READER_CONFIG")
+		log.Println(">>> SET_READER_CONFIG")
 		conn.Write(buildSetReaderConfigResponse())
 		// Read virtual tags from a csv file
 		tags := readTagsFromCSV("tags.csv")
 		// Emit LLRP
 		go emit(conn, tags)
 	} else {
-		fmt.Printf("Unknown header: %v\n", header)
+		log.Printf("Unknown header: %v\n", header)
 	}
 }
 
@@ -379,12 +379,12 @@ func main() {
 	// Listen for incoming connections.
 	l, err := net.Listen(CONN_TYPE, CONN_HOST+":"+CONN_PORT)
 	if err != nil {
-		fmt.Println("Error listening:", err.Error())
+		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 	// Close the listener when the application closes.
 	defer l.Close()
-	fmt.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
+	log.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
 
 	for {
 		// Listen for an incoming connection.
