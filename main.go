@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/csv"
 	"encoding/hex"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -27,29 +26,26 @@ type Tag struct {
 	readData      []byte
 }
 
-var llrpHost string
-var llrpPort int
+const (
+	CONN_HOST   = "0.0.0.0"
+	CONN_PORT   = "5084"
+	CONN_TYPE   = "tcp"
+	BUFSIZE     = 512
+	HEADER_ROAR = 1085
+	HEADER_REN  = 1087
+	HEADER_SRC  = 1027
+	HEADER_SRCR = 1037
+	HEADER_KA   = 1086
+	HEADER_KAA  = 1096
+)
+
 var messageID = 1000
+var keepaliveID = 80000
 
 func check(e error) {
 	if e != nil {
 		panic(e)
 	}
-}
-
-func init() {
-	const (
-		defaultHost = "127.0.0.1"
-		hostUsage   = "llrp client hostname"
-		defaultPort = 5084
-		portUsage   = "port used for llrp connection"
-	)
-	flag.StringVar(&llrpHost, "host", defaultHost, hostUsage)
-	flag.StringVar(&llrpHost, "h",
-		defaultHost, hostUsage+" (shorthand)")
-	flag.IntVar(&llrpPort, "port", defaultPort, portUsage)
-	flag.IntVar(&llrpPort, "p",
-		defaultPort, portUsage+" (shorthand)")
 }
 
 func buildPeakRSSIParameter() []byte {
@@ -125,10 +121,10 @@ func buildTagReportDataParameter(epcDataParameter []byte,
 	opSpecResultParameter []byte) []byte {
 	tagReportDataLength := len(epcDataParameter) +
 		len(peakRSSIParameter) + len(airProtocolTagDataParameter) +
-		len(opSpecResultParameter) + 4 // Rsvd+Type+length=32bits=4bytes
+		len(opSpecResultParameter) + 4 // Rsvd+Type+length->32bits=4bytes
 	buf := new(bytes.Buffer)
 	var data = []interface{}{
-		uint16(240),                 // Reserved+Type=240 (TagReportData parameter)
+		uint16(240),                 // Rsvd+Type=240 (TagReportData parameter)
 		uint16(tagReportDataLength), // Length
 		epcDataParameter,
 		peakRSSIParameter,
@@ -142,13 +138,13 @@ func buildTagReportDataParameter(epcDataParameter []byte,
 	return buf.Bytes()
 }
 
-func bufferROAccessReport(tagReportDataParameter []byte) *bytes.Buffer {
+func buildROAccessReport(tagReportDataParameter []byte) []byte {
 	roAccessReportLength :=
-		len(tagReportDataParameter) + 10 // See below
+		len(tagReportDataParameter) + 10 // Rsvd+Ver+Type+Length+ID->80bits=10bytes
 	messageID += 1
 	buf := new(bytes.Buffer)
 	var data = []interface{}{
-		uint16(1085),                 // Rsvd+Ver+Type=61 (RO_ACCESS_REPORT)
+		uint16(HEADER_ROAR),          // Rsvd+Ver+Type=61 (RO_ACCESS_REPORT)
 		uint32(roAccessReportLength), // Message length
 		uint32(messageID),            // Message ID
 		tagReportDataParameter,
@@ -157,13 +153,135 @@ func bufferROAccessReport(tagReportDataParameter []byte) *bytes.Buffer {
 		err := binary.Write(buf, binary.BigEndian, v)
 		check(err)
 	}
-	return buf
+	return buf.Bytes()
 }
 
-func Use(vals ...interface{}) {
-	for _, val := range vals {
-		_ = val
+func buildUTCTimeStampParameter() []byte {
+	buf := new(bytes.Buffer)
+	currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+	var data = []interface{}{
+		uint16(128), // Rsvd+Type=128
+		uint16(12),  // Length
+		currentTime, // Microseconds
 	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildConnectionAttemptEventParameter() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(256), // Rsvd+Type=256
+		uint16(6),   // Length
+		uint16(0),   // Status(Success=0)
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildReaderEventNotificationDataParameter() []byte {
+	utcTimeStampParameter := buildUTCTimeStampParameter()
+	connectionAttemptEventParameter := buildConnectionAttemptEventParameter()
+	readerEventNotificationDataLength := len(utcTimeStampParameter) +
+		len(connectionAttemptEventParameter) + 4 // Rsvd+Type+length=32bits=4bytes
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(246),                               // Rsvd+Type=246 (ReaderEventNotificationData parameter)
+		uint16(readerEventNotificationDataLength), // Length
+		utcTimeStampParameter,
+		connectionAttemptEventParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildReaderEventNotification() []byte {
+	readerEventNotificationDataParameter := buildReaderEventNotificationDataParameter()
+	readerEventNotificationLength :=
+		len(readerEventNotificationDataParameter) + 10 // Rsvd+Ver+Type+Length+ID->80bits=10bytes
+	messageID += 1
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_REN),                    // Rsvd+Ver+Type=63 (READER_EVENT_NOTIFICATION)
+		uint32(readerEventNotificationLength), // Length
+		uint32(messageID),                     // ID
+		readerEventNotificationDataParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildLLRPStatusParameter() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(287), // Rsvd+Type=287
+		uint16(8),   // Length
+		uint16(0),   // StatusCode=M_Success(0)
+		uint16(0),   // ErrorDescriptionByteCount=0
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildSetReaderConfigResponse() []byte {
+	llrpStatusParameter := buildLLRPStatusParameter()
+	setReaderConfigResponseLength :=
+		len(llrpStatusParameter) + 10 // Rsvd+Ver+Type+Length+ID+R+Rsvd->80bits=10bytes
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_SRCR),                   // Rsvd+Ver+Type=13 (SET_READER_CONFIG_RESPONSE)
+		uint32(setReaderConfigResponseLength), // Length
+		uint32(0), // ID
+		llrpStatusParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildKeepalive() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_KA), // Rsvd+Ver+Type=62 (KEEPALIVE)
+		uint32(10),        // Length
+		uint32(0),         // ID
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildKeepaliveAck() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_KAA), // Rsvd+Ver+Type=62 (KEEPALIVE)
+		uint32(10),         // Length
+		uint32(0),          // ID
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
 }
 
 func buildTag(record []string) (Tag, error) {
@@ -184,11 +302,15 @@ func buildTag(record []string) (Tag, error) {
 	check(err)
 
 	tag := Tag{pcBits, length, epcLengthBits, epc, readData}
-	fmt.Printf("%+v\n", tag)
 	return tag, nil
 }
 
-func emit(conn net.Conn, r *csv.Reader) {
+func readTagsFromCSV(csvfile string) []*Tag {
+	csv_in, err := ioutil.ReadFile(csvfile)
+	check(err)
+	r := csv.NewReader(strings.NewReader(string(csv_in)))
+
+	tags := []*Tag{}
 	for {
 		record, err := r.Read()
 		// If reached at the end
@@ -202,63 +324,143 @@ func emit(conn net.Conn, r *csv.Reader) {
 		if err != nil {
 			continue
 		}
+		tags = append(tags, &tag)
+	}
+	return tags
+}
 
-		// PeakRSSIParameter
-		peakRSSIParameter :=
-			buildPeakRSSIParameter()
+func emit(conn net.Conn, tags []*Tag) {
+	t := time.NewTicker(1 * time.Second)
+	count := 0
+	for {
+		for _, tag := range tags {
+			log.Printf("%+v\n", tag)
 
-		// AirProtocolTagDataParameter
-		airProtocolTagDataParameter :=
-			buildC1G2PCParameter(tag.pcBits)
+			// PeakRSSIParameter
+			peakRSSIParameter :=
+				buildPeakRSSIParameter()
 
-		// EPCDataParameter
-		epcDataParameter :=
-			buildEPCDataParameter(tag.length, tag.epcLengthBits, tag.epc)
+			// AirProtocolTagDataParameter
+			airProtocolTagDataParameter :=
+				buildC1G2PCParameter(tag.pcBits)
 
-		// OpSpecResultParameter
-		opSpecResultParameter :=
-			buildC1G2ReadOpSpecResultParameter(tag.readData)
+			// EPCDataParameter
+			epcDataParameter :=
+				buildEPCDataParameter(tag.length, tag.epcLengthBits, tag.epc)
 
-		// Merge them into TagReportData
-		tagReportDataParameter :=
-			buildTagReportDataParameter(epcDataParameter,
-				peakRSSIParameter, airProtocolTagDataParameter,
-				opSpecResultParameter)
+			// OpSpecResultParameter
+			opSpecResultParameter :=
+				buildC1G2ReadOpSpecResultParameter(tag.readData)
 
-		// Append TagReportData to ROAccessReport
-		roAccessReportBuffer :=
-			bufferROAccessReport(tagReportDataParameter)
+			// Merge them into TagReportData
+			tagReportDataParameter :=
+				buildTagReportDataParameter(epcDataParameter,
+					peakRSSIParameter, airProtocolTagDataParameter,
+					opSpecResultParameter)
 
-		// Send
-		fmt.Fprint(conn, roAccessReportBuffer)
-		fmt.Printf("%v\n", roAccessReportBuffer.Len())
-		fmt.Printf("% x\n", roAccessReportBuffer.Bytes())
+			/*
 
-		// Wait until ACK received
-		time.Sleep(time.Millisecond)
+				TODO: Here, maybe stack more TRDs to ROAR
+
+			*/
+
+			// Append TagReportData to ROAccessReport
+			roAccessReport :=
+				buildROAccessReport(tagReportDataParameter)
+
+			// Send
+			conn.Write(roAccessReport)
+
+			// Wait until ACK received
+			time.Sleep(time.Millisecond)
+		}
+		select {
+		case <-t.C:
+			count += 1
+		}
+		if count >= 10 {
+			conn.Write(buildKeepalive())
+			buf := make([]byte, BUFSIZE)
+			reqLen, err := conn.Read(buf)
+			if err == io.EOF {
+				// Close the connection when you're done with it.
+				return
+			} else if err != nil {
+				log.Println("Error reading:", err.Error())
+				log.Println("reqLen: " + string(reqLen))
+				conn.Close()
+			}
+			header := binary.BigEndian.Uint16(buf[:2])
+			if header != HEADER_KAA {
+				log.Printf("Unknown header: %v\n", header)
+				return
+			}
+			count = 0
+		}
+	}
+}
+
+// Handles incoming requests.
+func handleRequest(conn net.Conn) {
+	// Make a buffer to hold incoming data.
+	buf := make([]byte, BUFSIZE)
+	// Read the incoming connection into the buffer.
+	reqLen, err := conn.Read(buf)
+	if err == io.EOF {
+		// Close the connection when you're done with it.
+		return
+	} else if err != nil {
+		log.Println("Error reading:", err.Error())
+		log.Println("reqLen: " + string(reqLen))
+		conn.Close()
+	}
+
+	header := binary.BigEndian.Uint16(buf[:2])
+	if header == HEADER_SRC {
+		log.Println(">>> SET_READER_CONFIG")
+		conn.Write(buildSetReaderConfigResponse())
+		// Read virtual tags from a csv file
+		tags := readTagsFromCSV("tags.csv")
+		// Emit LLRP
+		go emit(conn, tags)
+	} else if header == HEADER_KAA {
+		tags := readTagsFromCSV("tags.csv")
+		go emit(conn, tags)
+	} else {
+		log.Printf("Unknown header: %v\n", header)
+		return
 	}
 }
 
 func main() {
-	flag.Parse()
+	// Listen for incoming connections.
+	l, err := net.Listen(CONN_TYPE, CONN_HOST+":"+CONN_PORT)
+	if err != nil {
+		log.Println("Error listening:", err.Error())
+		os.Exit(1)
+	}
+	// Close the listener when the application closes.
+	defer l.Close()
+	log.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
 
-	// Establish a connection to the llrp client
-	conn, err := net.Dial("tcp",
-		llrpHost+":"+strconv.Itoa(llrpPort))
-	check(err)
+	for {
+		// Listen for an incoming connection.
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting: ", err.Error())
+			os.Exit(1)
+		}
 
-	// Read virtual tags from a csv file
-	csv_in, err := ioutil.ReadFile("tags.csv")
-	check(err)
-	r := csv.NewReader(strings.NewReader(string(csv_in)))
+		// Send back READER_EVENT_NOTIFICATION
+		conn.Write(buildReaderEventNotification())
+		time.Sleep(time.Millisecond)
 
-	// Emit LLRP
-	go emit(conn, r)
+		// Handle connections in a new goroutine.
+		go handleRequest(conn)
+	}
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	log.Println(<-ch)
-
-	conn.Close()
 }
