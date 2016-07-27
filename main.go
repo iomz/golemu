@@ -161,7 +161,7 @@ func emit(conn net.Conn, tags []*Tag) {
 				conn.Close()
 			}
 			header := binary.BigEndian.Uint16(buf[:2])
-			if header != llrp.HEADER_KAA {
+			if header != llrp.H_KeepaliveAck {
 				log.Printf("Unknown header: %v\n", header)
 				return
 			}
@@ -186,14 +186,14 @@ func handleRequest(conn net.Conn) {
 	}
 
 	header := binary.BigEndian.Uint16(buf[:2])
-	if header == llrp.HEADER_SRC {
+	if header == llrp.H_SetReaderConfig {
 		log.Println(">>> SET_READER_CONFIG")
 		conn.Write(llrp.SetReaderConfigResponse())
 		// Read virtual tags from a csv file
 		tags := readTagsFromCSV("tags.csv")
 		// Emit LLRP
 		go emit(conn, tags)
-	} else if header == llrp.HEADER_KAA {
+	} else if header == llrp.H_KeepaliveAck {
 		tags := readTagsFromCSV("tags.csv")
 		go emit(conn, tags)
 	} else {
@@ -259,12 +259,12 @@ func runClient() {
 		}
 
 		header := binary.BigEndian.Uint16(buf[:2])
-		if header == llrp.HEADER_REN {
+		if header == llrp.H_ReaderEventNotification {
 			fmt.Println(">>> READER_EVENT_NOTIFICATION")
 			conn.Write(llrp.SetReaderConfig(messageID))
-		} else if header == llrp.HEADER_SRCR {
+		} else if header == llrp.H_SetReaderConfigResponse {
 			fmt.Println(">>> SET_READER_CONFIG_RESPONSE")
-		} else if header == llrp.HEADER_ROAR {
+		} else if header == llrp.H_ROAccessReport {
 			fmt.Println(">>> RO_ACCESS_REPORT")
 			fmt.Printf("Packet size: %v\n", reqLen)
 			fmt.Printf("% x\n", buf[:reqLen])
