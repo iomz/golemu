@@ -65,13 +65,13 @@ func BuildTag(record []string) (Tag, error) {
 
 	pcBits := record[0]
 	length, err := strconv.ParseInt(record[1], 10, 16)
-	Check(err)
+	check(err)
 	epcLengthBits, err := strconv.ParseInt(record[2], 10, 16)
-	Check(err)
+	check(err)
 	epc, err := hex.DecodeString(record[3])
-	Check(err)
+	check(err)
 	readData, err := hex.DecodeString("a896")
-	Check(err)
+	check(err)
 
 	tag := Tag{pcBits, length, epcLengthBits, epc, readData}
 	return tag, nil
@@ -79,7 +79,7 @@ func BuildTag(record []string) (Tag, error) {
 
 func readTagsFromCSV(csvfile string) []*Tag {
 	csv_in, err := ioutil.ReadFile(csvfile)
-	Check(err)
+	check(err)
 	r := csv.NewReader(strings.NewReader(string(csv_in)))
 
 	tags := []*Tag{}
@@ -89,7 +89,7 @@ func readTagsFromCSV(csvfile string) []*Tag {
 		if err == io.EOF {
 			break
 		}
-		Check(err)
+		check(err)
 
 		// Construct a tag read data
 		tag, err := BuildTag(record)
@@ -242,7 +242,7 @@ func runStream() {
 func runClient() {
 	// Establish a connection to the llrp client
 	conn, err := net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
-	Check(err)
+	check(err)
 
 	buf := make([]byte, BUFSIZE)
 	for {
