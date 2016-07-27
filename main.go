@@ -16,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type Tag struct {
@@ -27,9 +29,7 @@ type Tag struct {
 }
 
 const (
-	CONN_HOST   = "0.0.0.0"
-	CONN_PORT   = "5084"
-	CONN_TYPE   = "tcp"
+	VERSION     = "0.0.1"
 	BUFSIZE     = 512
 	HEADER_ROAR = 1085
 	HEADER_REN  = 1087
@@ -39,8 +39,22 @@ const (
 	HEADER_KAA  = 1096
 )
 
-var messageID = 1000
-var keepaliveID = 80000
+var (
+	app                = kingpin.New("gologir", "A mock LLRP-based logical reader for RFID Tags.")
+	verbose            = app.Flag("verbose", "Enable verbose mode.").Bool()
+	initalMessageID    = app.Flag("initialMessageID", "The initial messageID to start from.").Default("1000").Int()
+	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Default("80000").Int()
+	port               = app.Flag("port", "LLRP listening port.").Default("5084").Int()
+	ip                 = app.Flag("ip", "LLRP listening address.").Default("127.0.0.1").IP()
+
+	stream = app.Command("stream", "Run as a tag streamer.")
+	//sub  = stream.Arg("sub", "Sub option.")
+
+	client = app.Command("client", "Run as a client mode.")
+
+	messageID   = *initalMessageID
+	keepaliveID = *initialKeepaliveID
+)
 
 func check(e error) {
 	if e != nil {
@@ -238,6 +252,41 @@ func buildLLRPStatusParameter() []byte {
 	return buf.Bytes()
 }
 
+func buildKeepaliveSpecParameter() []byte {
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(220),   // Rsvd+Type=220
+		uint16(9),     // Length
+		uint8(1),      // KeepaliveTriggerType=Periodic(1)
+		uint32(10000), // TimeInterval=10000
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
+func buildSetReaderConfig() []byte {
+	keepaliveSpecParameter := buildKeepaliveSpecParameter()
+	setReaderConfigLength :=
+		len(keepaliveSpecParameter) + 11 // Rsvd+Ver+Type+Length+ID+R+Rsvd->88bits=11bytes
+	messageID += 1
+	buf := new(bytes.Buffer)
+	var data = []interface{}{
+		uint16(HEADER_SRC),            // Rsvd+Ver+Type=3 (SET_READER_CONFIG)
+		uint32(setReaderConfigLength), // Length
+		uint32(messageID),             // ID
+		uint8(0),                      // RestoreFactorySetting(no=0)+Rsvd
+		keepaliveSpecParameter,
+	}
+	for _, v := range data {
+		err := binary.Write(buf, binary.BigEndian, v)
+		check(err)
+	}
+	return buf.Bytes()
+}
+
 func buildSetReaderConfigResponse() []byte {
 	llrpStatusParameter := buildLLRPStatusParameter()
 	setReaderConfigResponseLength :=
@@ -334,7 +383,8 @@ func emit(conn net.Conn, tags []*Tag) {
 	count := 0
 	for {
 		for _, tag := range tags {
-			log.Printf("%+v\n", tag)
+			// Log the tag for debug
+			//log.Printf("%+v\n", tag)
 
 			// PeakRSSIParameter
 			peakRSSIParameter :=
@@ -360,7 +410,7 @@ func emit(conn net.Conn, tags []*Tag) {
 
 			/*
 
-				TODO: Here, maybe stack more TRDs to ROAR
+			   TODO: Here, maybe stack more TRDs to ROAR
 
 			*/
 
@@ -428,20 +478,22 @@ func handleRequest(conn net.Conn) {
 		go emit(conn, tags)
 	} else {
 		log.Printf("Unknown header: %v\n", header)
+		fmt.Println("Message: %v", buf)
 		return
 	}
 }
 
-func main() {
+// stream mode
+func runStream() {
 	// Listen for incoming connections.
-	l, err := net.Listen(CONN_TYPE, CONN_HOST+":"+CONN_PORT)
+	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
 	if err != nil {
 		log.Println("Error listening:", err.Error())
 		os.Exit(1)
 	}
 	// Close the listener when the application closes.
 	defer l.Close()
-	log.Println("Listening on " + CONN_HOST + ":" + CONN_PORT)
+	log.Println("Listening on " + ip.String() + ":" + strconv.Itoa(*port))
 
 	for {
 		// Listen for an incoming connection.
@@ -463,4 +515,50 @@ func main() {
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	log.Println(<-ch)
+}
+
+// client mode
+func runClient() {
+	// Establish a connection to the llrp client
+	conn, err := net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
+	check(err)
+
+	buf := make([]byte, BUFSIZE)
+	for {
+		// Read the incoming connection into the buffer.
+		reqLen, err := conn.Read(buf)
+		if err == io.EOF {
+			// Close the connection when you're done with it.
+			return
+		} else if err != nil {
+			fmt.Println("Error reading:", err.Error())
+			fmt.Println("reqLen: " + string(reqLen))
+			conn.Close()
+			break
+		}
+
+		header := binary.BigEndian.Uint16(buf[:2])
+		if header == HEADER_REN {
+			fmt.Println(">>> READER_EVENT_NOTIFICATION")
+			conn.Write(buildSetReaderConfig())
+		} else if header == HEADER_SRCR {
+			fmt.Println(">>> SET_READER_CONFIG_RESPONSE")
+		} else if header == HEADER_ROAR {
+			fmt.Println(">>> RO_ACCESS_REPORT")
+			fmt.Printf("Packet size: %v\n", reqLen)
+			fmt.Printf("% x\n", buf[:reqLen])
+		} else {
+			fmt.Printf("Unknown header: %v\n", header)
+		}
+	}
+}
+
+func main() {
+	app.Version(VERSION)
+	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
+	case stream.FullCommand():
+		runStream()
+	case client.FullCommand():
+		runClient()
+	}
 }
