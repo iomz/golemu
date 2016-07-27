@@ -1,4 +1,4 @@
-package main
+package gologir
 
 import (
 	"encoding/binary"
@@ -50,7 +50,7 @@ var (
 	keepaliveID = *initialKeepaliveID
 )
 
-func Check(e error) {
+func check(e error) {
 	if e != nil {
 		panic(e)
 	}
