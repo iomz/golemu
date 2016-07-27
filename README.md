@@ -1,6 +1,10 @@
 gologir
 ==
 
+[![Build Status](https://travis-ci.org/iomz/gologir.svg?branch=master)](https://travis-ci.org/iomz/gologir)
+[![Coverage Status](https://coveralls.io/repos/github/iomz/gologir/badge.svg?branch=master)](https://coveralls.io/github/iomz/gologir?branch=master)
+[![GoDoc](https://godoc.org/github.com/iomz/gologir?status.svg)](http://godoc.org/github.com/iomz/gologir)
+
 A simple LLRP-based logical reader mock for RFID Tags.
 
 For what?
@@ -18,7 +22,7 @@ $ go run main.go
 Author
 --
 
-Iori Mizutani
+Iori Mizutani (iomz)
 
 License
 --
