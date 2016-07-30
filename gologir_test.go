@@ -1,4 +1,4 @@
-package gologir
+package main
 
 import (
 	"testing"

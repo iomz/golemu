@@ -1,4 +1,4 @@
-package gologir
+package main
 
 import (
 	"encoding/binary"
@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"time"
 
-	"gopkg.in/alecthomas/kingpin.v2"
 	"github.com/iomz/go-llrp"
+	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 type Tag struct {
@@ -29,20 +29,20 @@ type Tag struct {
 }
 
 const (
-	VERSION     = "0.0.1"
-	BUFSIZE     = 512
+	VERSION = "0.0.1"
+	BUFSIZE = 512
 )
 
 var (
 	app                = kingpin.New("gologir", "A mock LLRP-based logical reader for RFID Tags.")
-	verbose            = app.Flag("verbose", "Enable verbose mode.").Bool()
-	initalMessageID    = app.Flag("initialMessageID", "The initial messageID to start from.").Default("1000").Int()
-	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Default("80000").Int()
-	port               = app.Flag("port", "LLRP listening port.").Default("5084").Int()
-	ip                 = app.Flag("ip", "LLRP listening address.").Default("127.0.0.1").IP()
+	verbose            = app.Flag("verbose", "Enable verbose mode.").Short('v').Bool()
+	initalMessageID    = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
+	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Short('k').Default("80000").Int()
+	port               = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
+	ip                 = app.Flag("ip", "LLRP listening address.").Short('i').Default("127.0.0.1").IP()
 
-	stream = app.Command("stream", "Run as a tag streamer.")
-	//sub  = stream.Arg("sub", "Sub option.")
+	server = app.Command("server", "Run as a tag stream server.")
+	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
 
 	client = app.Command("client", "Run as a client mode.")
 
@@ -101,45 +101,44 @@ func readTagsFromCSV(csvfile string) []*Tag {
 	return tags
 }
 
+func buildTagReportDataStack(tag *Tag) []byte {
+	// EPCData
+	epcd := llrp.EPCData(tag.length, tag.epcLengthBits, tag.epc)
+
+	// PeakRSSI
+	prssi := llrp.PeakRSSI()
+
+	// AirProtocolTagData
+	aptd := llrp.C1G2PC(tag.pcBits)
+
+	// OpSpecResult
+	osr := llrp.C1G2ReadOpSpecResult(tag.readData)
+
+	// Merge them into TagReportData
+	trd := llrp.TagReportData(epcd, prssi, aptd, osr)
+
+	return trd
+}
+
 func emit(conn net.Conn, tags []*Tag) {
 	t := time.NewTicker(1 * time.Second)
 	count := 0
-	for {
+	for { // Infinite loop
 		for _, tag := range tags {
 			// Log the tag for debug
 			//log.Printf("%+v\n", tag)
 
-			// PeakRSSI
-			peakRSSI := llrp.PeakRSSI()
-
-			// AirProtocolTagData
-			airProtocolTagData := llrp.C1G2PC(tag.pcBits)
-
-			// EPCData
-			epcData := llrp.EPCData(tag.length, tag.epcLengthBits, tag.epc)
-
-			// OpSpecResult
-			opSpecResult := llrp.C1G2ReadOpSpecResult(tag.readData)
-
-			// Merge them into TagReportData
-			tagReportData :=
-				llrp.TagReportData(epcData,
-					peakRSSI, airProtocolTagData,
-					opSpecResult)
-
 			/*
-
 			   TODO: Here, maybe stack more TRDs to ROAR
-
 			*/
+			trd := buildTagReportDataStack(tag)
 
 			// Append TagReportData to ROAccessReport
-			roAccessReport :=
-				llrp.ROAccessReport(tagReportData, messageID)
+			roar := llrp.ROAccessReport(trd, messageID)
 			messageID += 1
 
 			// Send
-			conn.Write(roAccessReport)
+			conn.Write(roar)
 
 			// Wait until ACK received
 			time.Sleep(time.Millisecond)
@@ -167,7 +166,7 @@ func emit(conn net.Conn, tags []*Tag) {
 			}
 			count = 0
 		}
-	}
+	} // Infinite loop
 }
 
 // Handles incoming requests.
@@ -203,8 +202,8 @@ func handleRequest(conn net.Conn) {
 	}
 }
 
-// stream mode
-func runStream() {
+// server mode
+func runServer() {
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
 	if err != nil {
@@ -277,8 +276,8 @@ func runClient() {
 func main() {
 	app.Version(VERSION)
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
-	case stream.FullCommand():
-		runStream()
+	case server.FullCommand():
+		runServer()
 	case client.FullCommand():
 		runClient()
 	}
