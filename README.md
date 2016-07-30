@@ -5,7 +5,7 @@ gologir
 [![Coverage Status](https://coveralls.io/repos/github/iomz/gologir/badge.svg?branch=master)](https://coveralls.io/github/iomz/gologir?branch=master)
 [![GoDoc](https://godoc.org/github.com/iomz/gologir?status.svg)](http://godoc.org/github.com/iomz/gologir)
 
-A simple LLRP-based logical reader mock for RFID Tags.
+A simple LLRP-based logical reader mock for RFID Tags using [go-llrp](https://github.com/iomz/go-llrp).
 
 For what?
 --
