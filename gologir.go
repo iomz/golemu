@@ -50,12 +50,14 @@ var (
 	keepaliveID = *initialKeepaliveID
 )
 
+// Check if error
 func check(e error) {
 	if e != nil {
 		panic(e)
 	}
 }
 
+// Construct Tag struct from Tag info strings
 func BuildTag(record []string) (Tag, error) {
 	// If the row is incomplete
 	if len(record) != 4 {
@@ -77,6 +79,7 @@ func BuildTag(record []string) (Tag, error) {
 	return tag, nil
 }
 
+// Read Tag info from the CSV file and returns a slice of Tag struct pointers
 func readTagsFromCSV(csvfile string) []*Tag {
 	csv_in, err := ioutil.ReadFile(csvfile)
 	check(err)
@@ -101,6 +104,7 @@ func readTagsFromCSV(csvfile string) []*Tag {
 	return tags
 }
 
+// Take one Tag struct and build TagReportData parameter payload in []byte
 func buildTagReportDataStack(tag *Tag) []byte {
 	// EPCData
 	epcd := llrp.EPCData(tag.length, tag.epcLengthBits, tag.epc)
@@ -120,21 +124,37 @@ func buildTagReportDataStack(tag *Tag) []byte {
 	return trd
 }
 
+// Iterate through the Tags and write ROAccessReport message to the socket
 func emit(conn net.Conn, tags []*Tag) {
+	var trds []*[]byte
+	tagCount := 0
+	trdIndex := 0
+
+	// Iterate through tags and divide them into TRD stacks
+	for _, tag := range tags {
+		tagCount += 1
+		// TODO: Need to set ceiling for too large payload?
+		if tagCount > *maxTag && *maxTag != 0 {
+			trd := buildTagReportDataStack(tag)
+			trds = append(trds, &trd)
+			trdIndex += 1
+			tagCount = 1
+		} else {
+			trd := buildTagReportDataStack(tag)
+			if len(trds) == 0 {
+				trds = append(trds, &trd)
+			} else {
+				*(trds[trdIndex]) = append(*(trds[trdIndex]), trd...)
+			}
+		}
+	}
+
 	t := time.NewTicker(1 * time.Second)
 	count := 0
 	for { // Infinite loop
-		for _, tag := range tags {
-			// Log the tag for debug
-			//log.Printf("%+v\n", tag)
-
-			/*
-			   TODO: Here, maybe stack more TRDs to ROAR
-			*/
-			trd := buildTagReportDataStack(tag)
-
+		for _, trd := range trds {
 			// Append TagReportData to ROAccessReport
-			roar := llrp.ROAccessReport(trd, messageID)
+			roar := llrp.ROAccessReport(*trd, messageID)
 			messageID += 1
 
 			// Send
