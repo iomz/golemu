@@ -170,7 +170,7 @@ func emit(conn net.Conn, tags []*Tag) {
 }
 
 // Handles incoming requests.
-func handleRequest(conn net.Conn) {
+func handleRequest(conn net.Conn, tags []*Tag) {
 	// Make a buffer to hold incoming data.
 	buf := make([]byte, BUFSIZE)
 	// Read the incoming connection into the buffer.
@@ -188,12 +188,9 @@ func handleRequest(conn net.Conn) {
 	if header == llrp.H_SetReaderConfig {
 		log.Println(">>> SET_READER_CONFIG")
 		conn.Write(llrp.SetReaderConfigResponse())
-		// Read virtual tags from a csv file
-		tags := readTagsFromCSV("tags.csv")
 		// Emit LLRP
 		go emit(conn, tags)
 	} else if header == llrp.H_KeepaliveAck {
-		tags := readTagsFromCSV("tags.csv")
 		go emit(conn, tags)
 	} else {
 		log.Printf("Unknown header: %v\n", header)
@@ -204,6 +201,9 @@ func handleRequest(conn net.Conn) {
 
 // server mode
 func runServer() {
+	// Read virtual tags from a csv file
+	tags := readTagsFromCSV("tags.csv")
+
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
 	if err != nil {
@@ -228,7 +228,7 @@ func runServer() {
 		time.Sleep(time.Millisecond)
 
 		// Handle connections in a new goroutine.
-		go handleRequest(conn)
+		go handleRequest(conn, tags)
 	}
 
 	// Handle SIGINT and SIGTERM.
