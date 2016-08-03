@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/csv"
 	"encoding/hex"
@@ -21,11 +22,19 @@ import (
 )
 
 type Tag struct {
-	pcBits        string
-	length        int64
-	epcLengthBits int64
+	pcBits        uint16
+	length        uint16
+	epcLengthBits uint16
 	epc           []byte
 	readData      []byte
+}
+
+func (t Tag) Equal(tt Tag) bool {
+	if t.pcBits == tt.pcBits && t.length == tt.length && tt.epcLengthBits == tt.epcLengthBits && bytes.Equal(t.epc, tt.epc) && bytes.Equal(t.readData, tt.readData) {
+		return true
+	} else {
+		return false
+	}
 }
 
 const (
@@ -43,6 +52,7 @@ var (
 
 	server = app.Command("server", "Run as a tag stream server.")
 	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
+	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 
 	client = app.Command("client", "Run as a client mode.")
 
@@ -58,33 +68,34 @@ func check(e error) {
 }
 
 // Construct Tag struct from Tag info strings
-func BuildTag(record []string) (Tag, error) {
+func buildTag(record []string) (Tag, error) {
 	// If the row is incomplete
 	if len(record) != 4 {
 		var t Tag
 		return t, io.EOF
 	}
 
-	pcBits := record[0]
-	length, err := strconv.ParseInt(record[1], 10, 16)
+	pc64, err := strconv.ParseUint(record[0], 10, 16)
 	check(err)
-	epcLengthBits, err := strconv.ParseInt(record[2], 10, 16)
+	pc := uint16(pc64)
+	len64, err := strconv.ParseUint(record[1], 10, 16)
 	check(err)
+	len := uint16(len64)
+	epclen64, err := strconv.ParseUint(record[2], 10, 16)
+	check(err)
+	epclen := uint16(epclen64)
 	epc, err := hex.DecodeString(record[3])
 	check(err)
 	readData, err := hex.DecodeString("a896")
 	check(err)
 
-	tag := Tag{pcBits, length, epcLengthBits, epc, readData}
+	tag := Tag{pc, len, epclen, epc, readData}
 	return tag, nil
 }
 
-// Read Tag info from the CSV file and returns a slice of Tag struct pointers
-func readTagsFromCSV(csvfile string) []*Tag {
-	csv_in, err := ioutil.ReadFile(csvfile)
-	check(err)
-	r := csv.NewReader(strings.NewReader(string(csv_in)))
-
+// Read Tag data from the CSV strings and returns a slice of Tag struct pointers
+func loadTagsFromCSV(input string) []*Tag {
+	r := csv.NewReader(strings.NewReader(input))
 	tags := []*Tag{}
 	for {
 		record, err := r.Read()
@@ -95,7 +106,7 @@ func readTagsFromCSV(csvfile string) []*Tag {
 		check(err)
 
 		// Construct a tag read data
-		tag, err := BuildTag(record)
+		tag, err := buildTag(record)
 		if err != nil {
 			continue
 		}
@@ -105,7 +116,7 @@ func readTagsFromCSV(csvfile string) []*Tag {
 }
 
 // Take one Tag struct and build TagReportData parameter payload in []byte
-func buildTagReportDataStack(tag *Tag) []byte {
+func buildTagReportDataParameter(tag *Tag) []byte {
 	// EPCData
 	epcd := llrp.EPCData(tag.length, tag.epcLengthBits, tag.epc)
 
@@ -135,12 +146,12 @@ func emit(conn net.Conn, tags []*Tag) {
 		tagCount += 1
 		// TODO: Need to set ceiling for too large payload?
 		if tagCount > *maxTag && *maxTag != 0 {
-			trd := buildTagReportDataStack(tag)
+			trd := buildTagReportDataParameter(tag)
 			trds = append(trds, &trd)
 			trdIndex += 1
 			tagCount = 1
 		} else {
-			trd := buildTagReportDataStack(tag)
+			trd := buildTagReportDataParameter(tag)
 			if len(trds) == 0 {
 				trds = append(trds, &trd)
 			} else {
@@ -222,7 +233,10 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 // server mode
 func runServer() {
 	// Read virtual tags from a csv file
-	tags := readTagsFromCSV("tags.csv")
+	log.Printf("Loading virtual Tags from \"%v\"\n", *file)
+	csv_in, err := ioutil.ReadFile(*file)
+	check(err)
+	tags := loadTagsFromCSV(string(csv_in))
 
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
@@ -243,7 +257,8 @@ func runServer() {
 		}
 
 		// Send back READER_EVENT_NOTIFICATION
-		conn.Write(llrp.ReaderEventNotification(messageID))
+		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
 		messageID += 1
 		time.Sleep(time.Millisecond)
 
