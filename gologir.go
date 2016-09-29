@@ -38,7 +38,6 @@ func (t Tag) Equal(tt Tag) bool {
 }
 
 const (
-	VERSION = "0.1"
 	BUFSIZE = 512
 )
 
@@ -52,12 +51,13 @@ var (
 
 	server = app.Command("server", "Run as a tag stream server.")
 	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
-	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
+	file   = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 
 	client = app.Command("client", "Run as a client mode.")
 
 	messageID   = *initalMessageID
 	keepaliveID = *initialKeepaliveID
+	version     = "0.1.0"
 )
 
 // Check if error
@@ -231,7 +231,7 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 }
 
 // server mode
-func runServer() {
+func runServer() int {
 	// Read virtual tags from a csv file
 	log.Printf("Loading virtual Tags from \"%v\"\n", *file)
 	csv_in, err := ioutil.ReadFile(*file)
@@ -270,10 +270,11 @@ func runServer() {
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	log.Println(<-ch)
+	return 0
 }
 
 // client mode
-func runClient() {
+func runClient() int {
 	// Establish a connection to the llrp client
 	conn, err := net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
 	check(err)
@@ -284,7 +285,7 @@ func runClient() {
 		reqLen, err := conn.Read(buf)
 		if err == io.EOF {
 			// Close the connection when you're done with it.
-			return
+			return 0
 		} else if err != nil {
 			fmt.Println("Error reading:", err.Error())
 			fmt.Println("reqLen: " + string(reqLen))
@@ -306,14 +307,15 @@ func runClient() {
 			fmt.Printf("Unknown header: %v\n", header)
 		}
 	}
+	return 0
 }
 
 func main() {
-	app.Version(VERSION)
+	app.Version(version)
 	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
 	case server.FullCommand():
-		runServer()
+		os.Exit(runServer())
 	case client.FullCommand():
-		runClient()
+		os.Exit(runClient())
 	}
 }
