@@ -137,8 +137,7 @@ func buildTagReportDataParameter(tag *Tag) []byte {
 	return trd
 }
 
-// Iterate through the Tags and write ROAccessReport message to the socket
-func emit(conn net.Conn, tags []*Tag) {
+func buildTagReportDataStack(tags []*Tag) []*[]byte {
 	var trds []*[]byte
 	tagCount := 0
 	trdIndex := 0
@@ -162,78 +161,80 @@ func emit(conn net.Conn, tags []*Tag) {
 		}
 	}
 
-	t := time.NewTicker(1 * time.Second)
-	count := 0
-	for { // Infinite loop
-		select {
-		case <-t.C:
-			count += 1
-		// trds modify
-		}
+	return trds
+}
 
-		for _, trd := range trds {
-			// Append TagReportData to ROAccessReport
-			roar := llrp.ROAccessReport(*trd, messageID)
-			atomic.AddUint32(&messageID, 1)
-			runtime.Gosched()
+// Iterate through the Tags and write ROAccessReport message to the socket
+func sendROAccessReport(conn net.Conn, trds []*[]byte) {
+	for _, trd := range trds {
+		// Append TagReportData to ROAccessReport
+		roar := llrp.ROAccessReport(*trd, messageID)
+		atomic.AddUint32(&messageID, 1)
+		runtime.Gosched()
 
-			// Send
-			conn.Write(roar)
+		// Send
+		conn.Write(roar)
 
-			// Wait until ACK received
-			time.Sleep(time.Millisecond)
-		}
-
-		// Keepalive check with the client
-		if count >= 10 {
-			conn.Write(llrp.Keepalive())
-			buf := make([]byte, BUFSIZE)
-			reqLen, err := conn.Read(buf)
-			if err == io.EOF {
-				// Close the connection when you're done with it.
-				return
-			} else if err != nil {
-				log.Println("Error reading:", err.Error())
-				log.Println("reqLen: " + string(reqLen))
-				conn.Close()
-			}
-			header := binary.BigEndian.Uint16(buf[:2])
-			if header != llrp.H_KeepaliveAck {
-				log.Printf("Unknown header: %v\n", header)
-				return
-			}
-			count = 0
-		}
-	} // Infinite loop
+		// Wait until ACK received
+		time.Sleep(time.Millisecond)
+	}
 }
 
 // Handles incoming requests.
-func handleRequest(conn net.Conn, tags []*Tag) {
+func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 	// Make a buffer to hold incoming data.
 	buf := make([]byte, BUFSIZE)
-	// Read the incoming connection into the buffer.
-	reqLen, err := conn.Read(buf)
-	if err == io.EOF {
-		// Close the connection when you're done with it.
-		return
-	} else if err != nil {
-		log.Println("Error reading:", err.Error())
-		log.Println("reqLen: " + string(reqLen))
-		conn.Close()
-	}
 
-	header := binary.BigEndian.Uint16(buf[:2])
-	if header == llrp.H_SetReaderConfig {
-		log.Println(">>> SET_READER_CONFIG")
-		conn.Write(llrp.SetReaderConfigResponse())
-		// Emit LLRP
-		go emit(conn, tags)
-	} else if header == llrp.H_KeepaliveAck {
-		go emit(conn, tags)
-	} else {
-		log.Printf("Unknown header: %v\n", header)
-		fmt.Println("Message: %v", buf)
-		return
+	for {
+		// Read the incoming connection into the buffer.
+		reqLen, err := conn.Read(buf)
+		if err == io.EOF {
+			// Close the connection when you're done with it.
+			return
+		} else if err != nil {
+			log.Println("Error reading:", err.Error())
+			log.Println("reqLen: " + string(reqLen))
+			conn.Close()
+		}
+
+		// Respond according to the LLRP packet header
+		header := binary.BigEndian.Uint16(buf[:2])
+		if header == llrp.H_SetReaderConfig || header == llrp.H_KeepaliveAck {
+			if header == llrp.H_SetReaderConfig {
+				// SRC received, start ROAR
+				log.Println(">>> SET_READER_CONFIG")
+				conn.Write(llrp.SetReaderConfigResponse())
+			} else if header == llrp.H_KeepaliveAck {
+				// KA receieved, continue ROAR
+				log.Println(">>> KeepaliveAck")
+			}
+			trds := buildTagReportDataStack(tags)
+			// TODO: ROAR and Keepalive interval
+			roarTicker := time.NewTicker(1 * time.Second)
+			KeepaliveTicker := time.NewTicker(10 * time.Second)
+			for { // Infinite loop
+				isAlive := true
+				select {
+				case <-roarTicker.C:
+					log.Println("<<< ROAccessReport")
+					sendROAccessReport(conn, trds)
+				case <-KeepaliveTicker.C:
+					log.Println("<<< Keepalive")
+					conn.Write(llrp.Keepalive())
+					isAlive = false
+				case tags := <-tagUpdated:
+					trds = buildTagReportDataStack(tags)
+				}
+				if !isAlive {
+					break
+				}
+			}
+		} else {
+			// Unknown LLRP packet received, reset the connection
+			log.Printf("Unknown header: %v\n", header)
+			fmt.Println("Message: %v", buf)
+			return
+		}
 	}
 }
 
@@ -249,30 +250,43 @@ func runServer() int {
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
 	if err != nil {
 		log.Println("Error listening:", err.Error())
-		os.Exit(1)
+		return 1
 	}
 	// Close the listener when the application closes.
 	defer l.Close()
 	log.Println("Listening on " + ip.String() + ":" + strconv.Itoa(*port))
 
-	for {
-		// Listen for an incoming connection.
-		conn, err := l.Accept()
-		if err != nil {
-			fmt.Println("Error accepting: ", err.Error())
-			os.Exit(1)
+	// Channel for communicating virtual tag updates
+	tagUpdated := make(chan []*Tag)
+
+	// Handle websocket connection
+	go func() {
+		for {
+			time.Sleep(time.Second)
 		}
+	}()
 
-		// Send back READER_EVENT_NOTIFICATION
-		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
-		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
-		atomic.AddUint32(&messageID, 1)
-		runtime.Gosched()
-		time.Sleep(time.Millisecond)
+	// Handle LLRP connection
+	go func() {
+		for {
+			// Listen for an incoming connection.
+			conn, err := l.Accept()
+			if err != nil {
+				fmt.Println("Error accepting: ", err.Error())
+				os.Exit(2)
+			}
 
-		// Handle connections in a new goroutine.
-		go handleRequest(conn, tags)
-	}
+			// Send back READER_EVENT_NOTIFICATION
+			currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+			conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
+			atomic.AddUint32(&messageID, 1)
+			runtime.Gosched()
+			time.Sleep(time.Millisecond)
+
+			// Handle connections in a new goroutine.
+			go handleRequest(conn, tags, tagUpdated)
+		}
+	}()
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)
