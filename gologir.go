@@ -12,8 +12,10 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -55,7 +57,7 @@ var (
 
 	client = app.Command("client", "Run as a client mode.")
 
-	messageID   = *initalMessageID
+	messageID   = uint32(*initalMessageID)
 	keepaliveID = *initialKeepaliveID
 	version     = "0.1.0"
 )
@@ -163,10 +165,17 @@ func emit(conn net.Conn, tags []*Tag) {
 	t := time.NewTicker(1 * time.Second)
 	count := 0
 	for { // Infinite loop
+		select {
+		case <-t.C:
+			count += 1
+		// trds modify
+		}
+
 		for _, trd := range trds {
 			// Append TagReportData to ROAccessReport
 			roar := llrp.ROAccessReport(*trd, messageID)
-			messageID += 1
+			atomic.AddUint32(&messageID, 1)
+			runtime.Gosched()
 
 			// Send
 			conn.Write(roar)
@@ -174,10 +183,8 @@ func emit(conn net.Conn, tags []*Tag) {
 			// Wait until ACK received
 			time.Sleep(time.Millisecond)
 		}
-		select {
-		case <-t.C:
-			count += 1
-		}
+
+		// Keepalive check with the client
 		if count >= 10 {
 			conn.Write(llrp.Keepalive())
 			buf := make([]byte, BUFSIZE)
@@ -259,7 +266,8 @@ func runServer() int {
 		// Send back READER_EVENT_NOTIFICATION
 		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
 		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
-		messageID += 1
+		atomic.AddUint32(&messageID, 1)
+		runtime.Gosched()
 		time.Sleep(time.Millisecond)
 
 		// Handle connections in a new goroutine.
