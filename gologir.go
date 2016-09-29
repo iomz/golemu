@@ -1,45 +1,29 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/csv"
-	"encoding/hex"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
 	"strconv"
-	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"code.google.com/p/go.net/websocket"
 	"github.com/iomz/go-llrp"
+	"github.com/zenazn/goji"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-type Tag struct {
-	pcBits        uint16
-	length        uint16
-	epcLengthBits uint16
-	epc           []byte
-	readData      []byte
-}
-
-func (t Tag) Equal(tt Tag) bool {
-	if t.pcBits == tt.pcBits && t.length == tt.length && tt.epcLengthBits == tt.epcLengthBits && bytes.Equal(t.epc, tt.epc) && bytes.Equal(t.readData, tt.readData) {
-		return true
-	} else {
-		return false
-	}
-}
-
 const (
+	// BUFSIZE is a general size for a buffer
 	BUFSIZE = 512
 )
 
@@ -57,115 +41,20 @@ var (
 
 	client = app.Command("client", "Run as a client mode.")
 
-	messageID   = uint32(*initalMessageID)
-	keepaliveID = *initialKeepaliveID
-	version     = "0.1.0"
+	messageID     = uint32(*initalMessageID)
+	keepaliveID   = *initialKeepaliveID
+	version       = "0.1.0"
+	pwd, _        = os.Getwd()
+	json          = websocket.JSON            // codec for JSON
+	message       = websocket.Message         // codec for string, []byte
+	activeClients = make(map[WebsockConn]int) // map containing clients
+	mutex         = &sync.Mutex{}
+	adds          = make(chan *addOp)
+	deletes       = make(chan *deleteOp)
 )
 
-// Check if error
-func check(e error) {
-	if e != nil {
-		panic(e)
-	}
-}
-
-// Construct Tag struct from Tag info strings
-func buildTag(record []string) (Tag, error) {
-	// If the row is incomplete
-	if len(record) != 4 {
-		var t Tag
-		return t, io.EOF
-	}
-
-	pc64, err := strconv.ParseUint(record[0], 10, 16)
-	check(err)
-	pc := uint16(pc64)
-	len64, err := strconv.ParseUint(record[1], 10, 16)
-	check(err)
-	len := uint16(len64)
-	epclen64, err := strconv.ParseUint(record[2], 10, 16)
-	check(err)
-	epclen := uint16(epclen64)
-	epc, err := hex.DecodeString(record[3])
-	check(err)
-	readData, err := hex.DecodeString("a896")
-	check(err)
-
-	tag := Tag{pc, len, epclen, epc, readData}
-	return tag, nil
-}
-
-// Read Tag data from the CSV strings and returns a slice of Tag struct pointers
-func loadTagsFromCSV(input string) []*Tag {
-	r := csv.NewReader(strings.NewReader(input))
-	tags := []*Tag{}
-	for {
-		record, err := r.Read()
-		// If reached at the end
-		if err == io.EOF {
-			break
-		}
-		check(err)
-
-		// Construct a tag read data
-		tag, err := buildTag(record)
-		if err != nil {
-			continue
-		}
-		tags = append(tags, &tag)
-	}
-	return tags
-}
-
-// Take one Tag struct and build TagReportData parameter payload in []byte
-func buildTagReportDataParameter(tag *Tag) []byte {
-	// EPCData
-	epcd := llrp.EPCData(tag.length, tag.epcLengthBits, tag.epc)
-
-	// PeakRSSI
-	prssi := llrp.PeakRSSI()
-
-	// AirProtocolTagData
-	aptd := llrp.C1G2PC(tag.pcBits)
-
-	// OpSpecResult
-	osr := llrp.C1G2ReadOpSpecResult(tag.readData)
-
-	// Merge them into TagReportData
-	trd := llrp.TagReportData(epcd, prssi, aptd, osr)
-
-	return trd
-}
-
-func buildTagReportDataStack(tags []*Tag) []*[]byte {
-	var trds []*[]byte
-	tagCount := 0
-	trdIndex := 0
-
-	// Iterate through tags and divide them into TRD stacks
-	for _, tag := range tags {
-		tagCount += 1
-		// TODO: Need to set ceiling for too large payload?
-		if tagCount > *maxTag && *maxTag != 0 {
-			trd := buildTagReportDataParameter(tag)
-			trds = append(trds, &trd)
-			trdIndex += 1
-			tagCount = 1
-		} else {
-			trd := buildTagReportDataParameter(tag)
-			if len(trds) == 0 {
-				trds = append(trds, &trd)
-			} else {
-				*(trds[trdIndex]) = append(*(trds[trdIndex]), trd...)
-			}
-		}
-	}
-
-	return trds
-}
-
 // Iterate through the Tags and write ROAccessReport message to the socket
-func sendROAccessReport(conn net.Conn, trds []*[]byte) {
+func sendROAccessReport(conn net.Conn, trds []*[]byte) error {
 	for _, trd := range trds {
 		// Append TagReportData to ROAccessReport
 		roar := llrp.ROAccessReport(*trd, messageID)
@@ -173,11 +62,16 @@ func sendROAccessReport(conn net.Conn, trds []*[]byte) {
 		runtime.Gosched()
 
 		// Send
-		conn.Write(roar)
+		_, err := conn.Write(roar)
+		if err != nil {
+			return err
+		}
 
 		// Wait until ACK received
 		time.Sleep(time.Millisecond)
 	}
+
+	return nil
 }
 
 // Handles incoming requests.
@@ -190,11 +84,15 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 		reqLen, err := conn.Read(buf)
 		if err == io.EOF {
 			// Close the connection when you're done with it.
+			log.Printf("Closing LLRP connection")
+			conn.Close()
 			return
 		} else if err != nil {
-			log.Println("Error reading:", err.Error())
-			log.Println("reqLen: " + string(reqLen))
+			log.Println("Error:", err.Error())
+			log.Printf("reqLen = %v\n", reqLen)
+			log.Printf("Closing LLRP connection")
 			conn.Close()
+			return
 		}
 
 		// Respond according to the LLRP packet header
@@ -215,24 +113,33 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 			for { // Infinite loop
 				isAlive := true
 				select {
+				// ROAccessReport interval tick
 				case <-roarTicker.C:
 					log.Println("<<< ROAccessReport")
-					sendROAccessReport(conn, trds)
+					err := sendROAccessReport(conn, trds)
+					if err != nil {
+						log.Println("Error:", err.Error())
+						isAlive = false
+					}
+				// Keepalive interval tick
 				case <-KeepaliveTicker.C:
 					log.Println("<<< Keepalive")
 					conn.Write(llrp.Keepalive())
 					isAlive = false
+				// When the tag queue is updated
 				case tags := <-tagUpdated:
 					trds = buildTagReportDataStack(tags)
 				}
 				if !isAlive {
+					roarTicker.Stop()
+					KeepaliveTicker.Stop()
 					break
 				}
 			}
 		} else {
 			// Unknown LLRP packet received, reset the connection
 			log.Printf("Unknown header: %v\n", header)
-			fmt.Println("Message: %v", buf)
+			log.Printf("Message: %v\n", buf)
 			return
 		}
 	}
@@ -242,14 +149,14 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 func runServer() int {
 	// Read virtual tags from a csv file
 	log.Printf("Loading virtual Tags from \"%v\"\n", *file)
-	csv_in, err := ioutil.ReadFile(*file)
+	csvIn, err := ioutil.ReadFile(*file)
 	check(err)
-	tags := loadTagsFromCSV(string(csv_in))
+	tags := loadTagsFromCSV(string(csvIn))
 
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
 	if err != nil {
-		log.Println("Error listening:", err.Error())
+		log.Println("Error:", err.Error())
 		return 1
 	}
 	// Close the listener when the application closes.
@@ -259,10 +166,40 @@ func runServer() int {
 	// Channel for communicating virtual tag updates
 	tagUpdated := make(chan []*Tag)
 
-	// Handle websocket connection
+	// Handle web
 	go func() {
+		publicPath := pwd + "/public"
+		goji.Handle("/*", http.FileServer(http.Dir(publicPath)))
+		goji.Handle("/sock", websocket.Handler(sockServer))
+
+		goji.Serve()
+
 		for {
-			time.Sleep(time.Second)
+			select {
+			case add := <-adds:
+				mutex.Lock()
+				if getIndexOfTag(tags, add.tag) < 0 {
+					tags = append(tags, add.tag)
+					writeTagsToCSV(tags, *file)
+					mutex.Unlock()
+					add.resp <- true
+				} else {
+					mutex.Unlock()
+					add.resp <- false
+				}
+			case delete := <-deletes:
+				mutex.Lock()
+				indexToDelete := getIndexOfTag(tags, delete.tag)
+				if indexToDelete >= 0 {
+					tags = append(tags[:indexToDelete], tags[indexToDelete+1:]...)
+					writeTagsToCSV(tags, *file)
+					mutex.Unlock()
+					delete.resp <- false
+				} else {
+					mutex.Unlock()
+					delete.resp <- true
+				}
+			}
 		}
 	}()
 
@@ -272,7 +209,7 @@ func runServer() int {
 			// Listen for an incoming connection.
 			conn, err := l.Accept()
 			if err != nil {
-				fmt.Println("Error accepting: ", err.Error())
+				log.Println("Error:", err.Error())
 				os.Exit(2)
 			}
 
@@ -309,24 +246,24 @@ func runClient() int {
 			// Close the connection when you're done with it.
 			return 0
 		} else if err != nil {
-			fmt.Println("Error reading:", err.Error())
-			fmt.Println("reqLen: " + string(reqLen))
+			log.Println("Error:", err.Error())
+			log.Printf("reqLen = %v\n", reqLen)
 			conn.Close()
 			break
 		}
 
 		header := binary.BigEndian.Uint16(buf[:2])
 		if header == llrp.H_ReaderEventNotification {
-			fmt.Println(">>> READER_EVENT_NOTIFICATION")
+			log.Println(">>> READER_EVENT_NOTIFICATION")
 			conn.Write(llrp.SetReaderConfig(messageID))
 		} else if header == llrp.H_SetReaderConfigResponse {
-			fmt.Println(">>> SET_READER_CONFIG_RESPONSE")
+			log.Println(">>> SET_READER_CONFIG_RESPONSE")
 		} else if header == llrp.H_ROAccessReport {
-			fmt.Println(">>> RO_ACCESS_REPORT")
-			fmt.Printf("Packet size: %v\n", reqLen)
-			fmt.Printf("% x\n", buf[:reqLen])
+			log.Println(">>> RO_ACCESS_REPORT")
+			log.Printf("Packet size: %v\n", reqLen)
+			log.Printf("% x\n", buf[:reqLen])
 		} else {
-			fmt.Printf("Unknown header: %v\n", header)
+			log.Printf("Unknown header: %v\n", header)
 		}
 	}
 	return 0

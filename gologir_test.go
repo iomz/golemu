@@ -79,7 +79,7 @@ func benchmarkLLRPFrame(max int, b *testing.B) {
 		var tagCount = 0
 		var trdIndex = 0
 		for _, tag := range benchTags {
-			tagCount += 1
+			tagCount++
 			if tagCount > max {
 				break
 			} else {
