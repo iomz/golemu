@@ -16,9 +16,9 @@ import (
 	"syscall"
 	"time"
 
-	"code.google.com/p/go.net/websocket"
 	"github.com/iomz/go-llrp"
 	"github.com/zenazn/goji"
+	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 

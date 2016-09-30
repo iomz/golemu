@@ -1,11 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
-	"code.google.com/p/go.net/websocket"
+	"golang.org/x/net/websocket"
 )
 
 // WebsockConn holds connection consists of the websocket and the client ip
@@ -50,7 +49,7 @@ func sockServer(ws *websocket.Conn) {
 		// Handle the command
 		if strings.Contains(clientMessage, "add") {
 			// add
-			fmt.Println("command: add")
+			log.Println("command: add")
 			tag, err := buildTag([]string{"10665", "16", "80", "dc20420c4c72cf4d76de"})
 			check(err)
 			add := &addOp{
@@ -60,7 +59,7 @@ func sockServer(ws *websocket.Conn) {
 			<-add.resp
 		} else if strings.Contains(clientMessage, "delete") {
 			// delete
-			fmt.Println("command: delete")
+			log.Println("command: delete")
 			tag, err := buildTag([]string{"10665", "16", "80", "dc20420c4c72cf4d76de"})
 			check(err)
 			delete := &deleteOp{
@@ -69,7 +68,7 @@ func sockServer(ws *websocket.Conn) {
 			deletes <- delete
 			<-delete.resp
 		} else {
-			fmt.Println("command: something else")
+			log.Println("command: something else")
 		}
 
 		for cs := range activeClients {
