@@ -39,7 +39,7 @@
 		<script src="//ajax.googleapis.com/ajax/libs/jquery/1.8.2/jquery.min.js"></script>
 		<script>
 			try {
-				var sock = new WebSocket("ws://{{.}}/sock");
+				var sock = new WebSocket("ws://"+window.location.host+"/ws");
 				//sock.binaryType = 'blob'; // can set it to 'blob' or 'arraybuffer
 				console.log("Websocket - status: " + sock.readyState);
 				sock.onopen = function(m) {

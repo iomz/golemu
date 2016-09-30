@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"net/http"
+	//"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -16,8 +16,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/contrib/static"
 	"github.com/iomz/go-llrp"
-	"github.com/zenazn/goji"
 	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -51,13 +52,9 @@ var (
 	mutex         = &sync.Mutex{}
 	adds          = make(chan *addOp)
 	deletes       = make(chan *deleteOp)
-	websocketListenAddr = "0.0.0.0:4000"
 )
 
 func init() {
-	publicPath := pwd + "/public"
-	http.Handle("/sock", websocket.Handler(sockServer))
-	goji.Handle("/*", http.FileServer(http.Dir(publicPath)))
 }
 
 // Iterate through the Tags and write ROAccessReport message to the socket
@@ -104,12 +101,12 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 
 		// Respond according to the LLRP packet header
 		header := binary.BigEndian.Uint16(buf[:2])
-		if header == llrp.H_SetReaderConfig || header == llrp.H_KeepaliveAck {
-			if header == llrp.H_SetReaderConfig {
+		if header == llrp.SetReaderConfigHeader || header == llrp.KeepaliveAckHeader {
+			if header == llrp.SetReaderConfigHeader {
 				// SRC received, start ROAR
 				log.Println(">>> SET_READER_CONFIG")
 				conn.Write(llrp.SetReaderConfigResponse())
-			} else if header == llrp.H_KeepaliveAck {
+			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
 				log.Println(">>> KeepaliveAck")
 			}
@@ -152,13 +149,34 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 	}
 }
 
-func handleWeb() {
-	// Start off websocket
-	err := http.ListenAndServe(websocketListenAddr, nil)
+// server mode
+func runServer() int {
+	// Read virtual tags from a csv file
+	log.Printf("Loading virtual Tags from \"%v\"\n", *file)
+	csvIn, err := ioutil.ReadFile(*file)
+	check(err)
+	tags := loadTagsFromCSV(string(csvIn))
+
+	// Listen for incoming connections.
+	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
 	check(err)
 
-	// Static files http serve
-	goji.Serve()
+	// Close the listener when the application closes.
+	defer l.Close()
+	log.Println("Listening on " + ip.String() + ":" + strconv.Itoa(*port))
+
+	// Channel for communicating virtual tag updates
+	tagUpdated := make(chan []*Tag)
+
+	// Handle web
+	// Start off websocket and static file hosting
+	r := gin.Default()
+	r.Use(static.Serve("/", static.LocalFile("./public", true)))
+	r.GET("/ws", func(c *gin.Context) {
+		handler := websocket.Handler(SockServer)
+		handler.ServeHTTP(c.Writer, c.Request)
+	})
+	r.Run(":8080")
 
 	for {
 		select {
@@ -187,55 +205,28 @@ func handleWeb() {
 			}
 		}
 	}
-}
-
-func handleLLRP() {
-	for {
-		// Listen for an incoming connection.
-		conn, err := l.Accept()
-		if err != nil {
-			log.Println("Error:", err.Error())
-			os.Exit(2)
-		}
-
-		// Send back READER_EVENT_NOTIFICATION
-		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
-		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
-		atomic.AddUint32(&messageID, 1)
-		runtime.Gosched()
-		time.Sleep(time.Millisecond)
-
-		// Handle connections in a new goroutine.
-		go handleRequest(conn, tags, tagUpdated)
-	}
-}
-
-// server mode
-func runServer() int {
-	// Read virtual tags from a csv file
-	log.Printf("Loading virtual Tags from \"%v\"\n", *file)
-	csvIn, err := ioutil.ReadFile(*file)
-	check(err)
-	tags := loadTagsFromCSV(string(csvIn))
-
-	// Listen for incoming connections.
-	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
-	if err != nil {
-		log.Println("Error:", err.Error())
-		return 1
-	}
-	// Close the listener when the application closes.
-	defer l.Close()
-	log.Println("Listening on " + ip.String() + ":" + strconv.Itoa(*port))
-
-	// Channel for communicating virtual tag updates
-	tagUpdated := make(chan []*Tag)
-
-	// Handle web
-	go handleWeb()
 
 	// Handle LLRP connection
-	go handleLLRP()
+	go func() {
+		for {
+			// Listen for an incoming connection.
+			conn, err := l.Accept()
+			if err != nil {
+				log.Println("Error:", err.Error())
+				os.Exit(2)
+			}
+
+			// Send back READER_EVENT_NOTIFICATION
+			currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+			conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
+			atomic.AddUint32(&messageID, 1)
+			runtime.Gosched()
+			time.Sleep(time.Millisecond)
+
+			// Handle connections in a new goroutine.
+			go handleRequest(conn, tags, tagUpdated)
+		}
+	}()
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)
@@ -265,12 +256,12 @@ func runClient() int {
 		}
 
 		header := binary.BigEndian.Uint16(buf[:2])
-		if header == llrp.H_ReaderEventNotification {
+		if header == llrp.ReaderEventNotificationHeader {
 			log.Println(">>> READER_EVENT_NOTIFICATION")
 			conn.Write(llrp.SetReaderConfig(messageID))
-		} else if header == llrp.H_SetReaderConfigResponse {
+		} else if header == llrp.SetReaderConfigResponseHeader {
 			log.Println(">>> SET_READER_CONFIG_RESPONSE")
-		} else if header == llrp.H_ROAccessReport {
+		} else if header == llrp.ROAccessReportHeader {
 			log.Println(">>> RO_ACCESS_REPORT")
 			log.Printf("Packet size: %v\n", reqLen)
 			log.Printf("% x\n", buf[:reqLen])

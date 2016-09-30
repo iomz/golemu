@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	// for benchmark
-	"strings"
 	"github.com/iomz/go-llrp"
+	"strings"
 )
 
 var tagtests = []struct {
@@ -31,17 +31,17 @@ func TestBuildTagReportDataParameter(t *testing.T) {
 }
 
 var csvtests = []struct {
-	in		string
-	out   []Tag
+	in  string
+	out []Tag
 }{
 	{`16802,22,128,c4a301c70d36cb32920b1d31c2dc3482
 10665,16,80,dc20420c4c72cf4d76de
 12288,18,96,302DB319A000004000000003
 `, []Tag{
-		{16802,22,128,[]byte{196,163,1,199,13,54,203,50,146,11,29,49,194,220,52,130},[]byte{168,150}},
-		{10665,16,80,[]byte{220,32,66,12,76,114,207,77,118,222},[]byte{168,150}},
-		{12288,18,96,[]byte{48,45,179,25,160,0,0,64,0,0,0,3},[]byte{168,150}},
-		},
+		{16802, 22, 128, []byte{196, 163, 1, 199, 13, 54, 203, 50, 146, 11, 29, 49, 194, 220, 52, 130}, []byte{168, 150}},
+		{10665, 16, 80, []byte{220, 32, 66, 12, 76, 114, 207, 77, 118, 222}, []byte{168, 150}},
+		{12288, 18, 96, []byte{48, 45, 179, 25, 160, 0, 0, 64, 0, 0, 0, 3}, []byte{168, 150}},
+	},
 	},
 }
 
@@ -98,9 +98,9 @@ func benchmarkLLRPFrame(max int, b *testing.B) {
 	}
 }
 
-func BenchmarkLLRPFrame1(b *testing.B) { benchmarkLLRPFrame(1, b) }
-func BenchmarkLLRPFrame10(b *testing.B) { benchmarkLLRPFrame(10, b) }
-func BenchmarkLLRPFrame100(b *testing.B) { benchmarkLLRPFrame(100, b) }
-func BenchmarkLLRPFrame1000(b *testing.B) { benchmarkLLRPFrame(1000, b) }
-func BenchmarkLLRPFrame10000(b *testing.B) { benchmarkLLRPFrame(10000, b) }
+func BenchmarkLLRPFrame1(b *testing.B)      { benchmarkLLRPFrame(1, b) }
+func BenchmarkLLRPFrame10(b *testing.B)     { benchmarkLLRPFrame(10, b) }
+func BenchmarkLLRPFrame100(b *testing.B)    { benchmarkLLRPFrame(100, b) }
+func BenchmarkLLRPFrame1000(b *testing.B)   { benchmarkLLRPFrame(1000, b) }
+func BenchmarkLLRPFrame10000(b *testing.B)  { benchmarkLLRPFrame(10000, b) }
 func BenchmarkLLRPFrame100000(b *testing.B) { benchmarkLLRPFrame(100000, b) }

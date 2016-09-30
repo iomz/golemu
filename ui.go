@@ -13,8 +13,8 @@ type WebsockConn struct {
 	clientIP  string
 }
 
-// sockServer to handle messaging between clients
-func sockServer(ws *websocket.Conn) {
+// SockServer to handle messaging between clients
+func SockServer(ws *websocket.Conn) {
 	var err error
 	var clientMessage string
 	// use []byte if websocket binary type is blob or arraybuffer
@@ -79,4 +79,3 @@ func sockServer(ws *websocket.Conn) {
 		}
 	}
 }
-
