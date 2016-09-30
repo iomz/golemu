@@ -51,7 +51,14 @@ var (
 	mutex         = &sync.Mutex{}
 	adds          = make(chan *addOp)
 	deletes       = make(chan *deleteOp)
+	websocketListenAddr = "0.0.0.0:4000"
 )
+
+func init() {
+	publicPath := pwd + "/public"
+	http.Handle("/sock", websocket.Handler(sockServer))
+	goji.Handle("/*", http.FileServer(http.Dir(publicPath)))
+}
 
 // Iterate through the Tags and write ROAccessReport message to the socket
 func sendROAccessReport(conn net.Conn, trds []*[]byte) error {
@@ -145,6 +152,64 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 	}
 }
 
+func handleWeb() {
+	// Start off websocket
+	err := http.ListenAndServe(websocketListenAddr, nil)
+	check(err)
+
+	// Static files http serve
+	goji.Serve()
+
+	for {
+		select {
+		case add := <-adds:
+			mutex.Lock()
+			if getIndexOfTag(tags, add.tag) < 0 {
+				tags = append(tags, add.tag)
+				writeTagsToCSV(tags, *file)
+				mutex.Unlock()
+				add.resp <- true
+			} else {
+				mutex.Unlock()
+				add.resp <- false
+			}
+		case delete := <-deletes:
+			mutex.Lock()
+			indexToDelete := getIndexOfTag(tags, delete.tag)
+			if indexToDelete >= 0 {
+				tags = append(tags[:indexToDelete], tags[indexToDelete+1:]...)
+				writeTagsToCSV(tags, *file)
+				mutex.Unlock()
+				delete.resp <- false
+			} else {
+				mutex.Unlock()
+				delete.resp <- true
+			}
+		}
+	}
+}
+
+func handleLLRP() {
+	for {
+		// Listen for an incoming connection.
+		conn, err := l.Accept()
+		if err != nil {
+			log.Println("Error:", err.Error())
+			os.Exit(2)
+		}
+
+		// Send back READER_EVENT_NOTIFICATION
+		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
+		atomic.AddUint32(&messageID, 1)
+		runtime.Gosched()
+		time.Sleep(time.Millisecond)
+
+		// Handle connections in a new goroutine.
+		go handleRequest(conn, tags, tagUpdated)
+	}
+}
+
 // server mode
 func runServer() int {
 	// Read virtual tags from a csv file
@@ -167,63 +232,10 @@ func runServer() int {
 	tagUpdated := make(chan []*Tag)
 
 	// Handle web
-	go func() {
-		publicPath := pwd + "/public"
-		goji.Handle("/*", http.FileServer(http.Dir(publicPath)))
-		goji.Handle("/sock", websocket.Handler(sockServer))
-
-		goji.Serve()
-
-		for {
-			select {
-			case add := <-adds:
-				mutex.Lock()
-				if getIndexOfTag(tags, add.tag) < 0 {
-					tags = append(tags, add.tag)
-					writeTagsToCSV(tags, *file)
-					mutex.Unlock()
-					add.resp <- true
-				} else {
-					mutex.Unlock()
-					add.resp <- false
-				}
-			case delete := <-deletes:
-				mutex.Lock()
-				indexToDelete := getIndexOfTag(tags, delete.tag)
-				if indexToDelete >= 0 {
-					tags = append(tags[:indexToDelete], tags[indexToDelete+1:]...)
-					writeTagsToCSV(tags, *file)
-					mutex.Unlock()
-					delete.resp <- false
-				} else {
-					mutex.Unlock()
-					delete.resp <- true
-				}
-			}
-		}
-	}()
+	go handleWeb()
 
 	// Handle LLRP connection
-	go func() {
-		for {
-			// Listen for an incoming connection.
-			conn, err := l.Accept()
-			if err != nil {
-				log.Println("Error:", err.Error())
-				os.Exit(2)
-			}
-
-			// Send back READER_EVENT_NOTIFICATION
-			currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
-			conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
-			atomic.AddUint32(&messageID, 1)
-			runtime.Gosched()
-			time.Sleep(time.Millisecond)
-
-			// Handle connections in a new goroutine.
-			go handleRequest(conn, tags, tagUpdated)
-		}
-	}()
+	go handleLLRP()
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)
