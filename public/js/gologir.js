@@ -247,6 +247,10 @@ try {
             }
             break;
 
+          case "error":
+            notifyOnError();
+            break;
+
           default:        }
     };
     ws.onerror = function(m) {

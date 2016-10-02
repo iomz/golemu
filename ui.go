@@ -68,6 +68,7 @@ func SockServer(ws *websocket.Conn) {
 		switch m.UpdateType {
 		case "add":
 			tag, err := buildTag([]string{m.Tag.PCBits, m.Tag.Length, m.Tag.EPCLengthBits, m.Tag.EPC, m.Tag.ReadData})
+			// TODO: buildTag fail notice
 			check(err)
 			add := &addOp{
 				tag:  &tag,
@@ -77,9 +78,11 @@ func SockServer(ws *websocket.Conn) {
 				log.Println(m)
 			} else {
 				log.Println("failed", m)
+				m.UpdateType = "error"
 			}
 		case "delete":
 			tag, err := buildTag([]string{m.Tag.PCBits, m.Tag.Length, m.Tag.EPCLengthBits, m.Tag.EPC, m.Tag.ReadData})
+			// TODO: buildTag fail notice
 			check(err)
 			delete := &deleteOp{
 				tag:  &tag,
@@ -89,6 +92,7 @@ func SockServer(ws *websocket.Conn) {
 				log.Println(m)
 			} else {
 				log.Println("failed", m)
+				m.UpdateType = "error"
 			}
 		case "retrieve":
 			retrieve := &retrieveOp{
