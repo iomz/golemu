@@ -71,7 +71,9 @@ func SockServer(ws *websocket.Conn) {
 				tag:  &tag,
 				resp: make(chan bool)}
 			adds <- add
-			if result = <-add.resp; result != true {
+			if result = <-add.resp; result {
+				log.Println(m)
+			} else {
 				log.Println("failed", m)
 			}
 		case "delete":
@@ -81,7 +83,9 @@ func SockServer(ws *websocket.Conn) {
 				tag:  &tag,
 				resp: make(chan bool)}
 			deletes <- delete
-			if result = <-delete.resp; result != true {
+			if result = <-delete.resp; result {
+				log.Println(m)
+			} else {
 				log.Println("failed", m)
 			}
 		case "retrieve":
@@ -94,16 +98,14 @@ func SockServer(ws *websocket.Conn) {
 				t := structs.Map(tag.InString())
 				tagList = append(tagList, t)
 			}
-			log.Println(tagList)
 			clientMessage, err = json.Marshal(tagList)
-			log.Println(string(clientMessage))
 			check(err)
 		default:
 			log.Println("Unknown UpdateType:", m.UpdateType)
 		}
 
 		for cs := range activeClients {
-			if err = websocket.Message.Send(cs.websocket, clientMessage); err != nil {
+			if err = websocket.Message.Send(cs.websocket, string(clientMessage)); err != nil {
 				// we could not send the message to a peer
 				log.Println("Could not send message to ", cs.clientIP, err.Error())
 			}
