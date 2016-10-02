@@ -62,6 +62,7 @@ func SockServer(ws *websocket.Conn) {
 
 		// Handle the command
 		// Compose result struct containing proper parameters
+		// TODO: separate actions into functions
 		result := false
 		switch m.UpdateType {
 		case "add":
