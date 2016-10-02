@@ -1,10 +1,21 @@
+String.prototype.hashCode = function() {
+    var hash = 0;
+    if (this.length == 0) return hash;
+    for (i = 0; i < this.length; i++) {
+        char = this.charCodeAt(i);
+        hash = (hash << 5) - hash + char;
+        hash = hash & hash;
+    }
+    return hash;
+};
+
 var waitAndSend = function(message, callback) {
     waitForConnection(function() {
         ws.send(message);
         if (typeof callback !== "undefined") {
             callback();
         }
-    }, 1e3);
+    }, 100);
 };
 
 var waitForConnection = function(callback, interval) {
@@ -32,43 +43,182 @@ var retrieveTagList = function() {
     waitAndSend(JSON.stringify(retrieve_tag));
 };
 
-$("#textin").val("");
+var addTag = function(t) {
+    var newBr1 = $("<br/>", {});
+    var newBr2 = $("<br/>", {});
+    var newH2 = $("<h2/>", {
+        text: t.Length + "/" + t.EPCLengthBits + "/" + t.PCBits + "/" + t.ReadData
+    });
+    var newImageOverlay = $("<div/>", {
+        "class": "image-overlay"
+    });
+    newBr1.appendTo(newImageOverlay);
+    newBr2.appendTo(newImageOverlay);
+    newH2.appendTo(newImageOverlay);
+    var newImageContainer = $("<div/>", {
+        "class": "image-container"
+    });
+    newImageOverlay.appendTo(newImageContainer);
+    var newTileContent = $("<div/>", {
+        "class": "tile-content"
+    });
+    newImageContainer.appendTo(newTileContent);
+    var newTileLabel = $("<span/>", {
+        "class": "tile-label",
+        text: t.EPC
+    });
+    var tagString = t.EPC + t.Length + t.EPCLengthBits + t.PCBits + t.ReadData;
+    var newTile = $("<div/>", {
+        "class": "tile-wide bg-darkBlue fg-white tag-tile",
+        "data-role": "tile",
+        id: tagString.hashCode()
+    });
+    newTileContent.appendTo(newTile);
+    newTileLabel.appendTo(newTile);
+    $("#tag-cloud").append(newTile);
+    setTimeout(function() {
+        newTile.css({
+            opacity: 1,
+            "-webkit-transform": "scale(1)",
+            transform: "scale(1)",
+            "-webkit-transition": ".3s",
+            transition: ".3s"
+        });
+    }, Math.floor(Math.random() * 500));
+};
 
-$("#send").click(function(event) {
-    ws.send($("#textin").val());
-    $("#textin").val("");
+var addTagFromDialog = function() {
+    var tagToAdd = {
+        UpdateType: "add",
+        Tag: {
+            PCBits: $("#PCBits").val(),
+            Length: $("#Length").val(),
+            EPCLengthBits: $("#EPCLengthBits").val(),
+            EPC: $("#EPC").val(),
+            ReadData: $("#ReadData").val()
+        },
+        Tags: null
+    };
+    ws.send(JSON.stringify(tagToAdd));
+    hideMetroDialog("#dialog");
+};
+
+var deleteTag = function(t) {
+    var tagString = t.EPC + t.Length + t.EPCLengthBits + t.PCBits + t.ReadData;
+    $("#" + tagString.hashCode()).remove();
+};
+
+var deleteTagFromDialog = function() {
+    var tagToDelete = {
+        UpdateType: "delete",
+        Tag: {
+            PCBits: $("#PCBits").val(),
+            Length: $("#Length").val(),
+            EPCLengthBits: $("#EPCLengthBits").val(),
+            EPC: $("#EPC").val(),
+            ReadData: $("#ReadData").val()
+        },
+        Tags: null
+    };
+    ws.send(JSON.stringify(tagToDelete));
+    hideMetroDialog("#dialog");
+};
+
+var updateTagFromDialog = function(t) {
+    hideMetroDialog("#dialog");
+    notifyOnError();
+};
+
+var editTag = function(t) {
+    $("#EPC").val(t.EPC);
+    $("#PCBits").val(t.PCBits);
+    $("#Length").val(t.Length);
+    $("#EPCLengthBits").val(t.EPCLengthBits);
+    $("#ReadData").val(t.ReadData);
+    $("#add-btn").hide();
+    $("#update-btn").show();
+    $("#delete-btn").show();
+    showDialog("#dialog");
+};
+
+var showDialog = function(id) {
+    var dialog = $(id).data("dialog");
+    dialog.open();
+};
+
+function notifyOnSuccess(m) {
+    var action = "";
+    switch (m.UpdateType) {
+      case "add":
+        action = "Added";
+        break;
+
+      case "delete":
+        action = "Deleted";
+        break;
+
+      default:
+        return;
+    }
+    $.Notify({
+        caption: "Success",
+        content: action + " a tag: " + m.Tag.EPC,
+        type: "success"
+    });
+}
+
+function notifyOnError() {
+    $.Notify({
+        caption: "Error",
+        content: "Something went wrong",
+        type: "alert"
+    });
+}
+
+$("#add-tile").click(function(event) {
+    $("#EPC").val("");
+    $("#PCBits").val("");
+    $("#Length").val("");
+    $("#EPCLengthBits").val("");
+    $("#ReadData").val("");
+    $("#add-btn").show();
+    $("#update-btn").hide();
+    $("#delete-btn").hide();
+    showDialog("#dialog");
 });
 
-$("#add-tag").click(function(event) {
-    var add_tag = {
-        updateType: "add",
-        tag: {
-            pcBits: "29a9",
-            length: "16",
-            epcLengthBits: "80",
-            epc: "dc20420c4c72cf4d76de",
-            readData: "1f1f"
-        }
-    };
-    ws.send(JSON.stringify(add_tag));
-});
-
-$("#delete-tag").click(function(event) {
-    var delete_tag = {
-        updateType: "delete",
-        tag: {
-            pcBits: "29a9",
-            length: "16",
-            epcLengthBits: "80",
-            epc: "dc20420c4c72cf4d76de",
-            readData: "1f1f"
-        }
-    };
-    ws.send(JSON.stringify(delete_tag));
+$("#delete-tile").click(function(event) {
+    $("#EPC").val("");
+    $("#PCBits").val("");
+    $("#Length").val("");
+    $("#EPCLengthBits").val("");
+    $("#ReadData").val("");
+    $("#add-btn").hide();
+    $("#update-btn").hide();
+    $("#delete-btn").show();
+    showDialog("#dialog");
 });
 
 $("#retrieve-tag").click(function(event) {
     retrieveTagList();
+});
+
+var tagTile;
+
+$(document).click(function(e) {
+    var src = $(e.target);
+    tagTile = src.parents(".tag-tile");
+    if (tagTile.length != 0) {
+        var epc = tagTile.children(".tile-label").text();
+        var info = $("h2", tagTile).text().split("/");
+        editTag({
+            PCBits: info[2],
+            Length: info[0],
+            EPCLengthBits: info[1],
+            EPC: epc,
+            ReadData: info[3]
+        });
+    }
 });
 
 try {
@@ -76,10 +226,32 @@ try {
     console.log("Websocket - status: " + ws.readyState);
     ws.onopen = function(m) {
         console.log("CONNECTION opened..." + this.readyState);
+        retrieveTagList();
     };
-    retrieveTagList();
     ws.onmessage = function(m) {
-        console.log(JSON.parse(m.data));
+        var m = JSON.parse(m.data);
+        switch (m.UpdateType) {
+          case "add":
+            addTag(m.Tag);
+            notifyOnSuccess(m);
+            break;
+
+          case "delete":
+            deleteTag(m.Tag);
+            notifyOnSuccess(m);
+            break;
+
+          case "retrieval":
+            for (var i = 0; i < m.Tags.length; i++) {
+                addTag(m.Tags[i]);
+            }
+            break;
+
+          case "error":
+            notifyOnError();
+            break;
+
+          default:        }
     };
     ws.onerror = function(m) {
         console.log("Error occured sending..." + m.data);

@@ -1,106 +1,124 @@
-
 <!DOCTYPE html>
-<meta charset="utf-8">
+<html>
+<head lang="en">
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="">
+    <meta name="keywords" content="">
+    <meta name="author" content="">
+    <link rel='shortcut icon' type='image/x-icon' href='../favicon.ico' />
+    <title>gologir</title>
+    <link rel="stylesheet" href="/style.css" type="text/css">
+    <link rel="stylesheet" href="/vendor/metro/build/css/metro.min.css" type="text/css">
+    <link rel="stylesheet" href="/vendor/metro/build/css/metro-icons.min.css" type="text/css">
+    <link rel="stylesheet" href="/vendor/metro/build/css/metro-colors.min.css" type="text/css">
+
+    <script src="/vendor/jquery/dist/jquery.min.js"></script>
+    <script src="/vendor/metro/build/js/metro.js"></script>
+</head>
 <body>
-<script src="//d3js.org/d3.v3.min.js"></script>
-<script>
+    <div data-role="charm" id="charmSettings" data-position="top">
+        <h1 class="text-light">Settings</h1>
+        <hr class="thin"/>
+        <br />
+        <div class="schemeButtons">
+            <div class="button square-button tile-area-scheme-dark" data-scheme="dark"></div>
+            <div class="button square-button tile-area-scheme-darkBrown" data-scheme="darkBrown"></div>
+            <div class="button square-button tile-area-scheme-darkCrimson" data-scheme="darkCrimson"></div>
+            <div class="button square-button tile-area-scheme-darkViolet" data-scheme="darkViolet"></div>
+            <div class="button square-button tile-area-scheme-darkMagenta" data-scheme="darkMagenta"></div>
+            <div class="button square-button tile-area-scheme-darkCyan" data-scheme="darkCyan"></div>
+            <div class="button square-button tile-area-scheme-darkCobalt" data-scheme="darkCobalt"></div>
+            <div class="button square-button tile-area-scheme-darkTeal" data-scheme="darkTeal"></div>
+            <div class="button square-button tile-area-scheme-darkEmerald" data-scheme="darkEmerald"></div>
+            <div class="button square-button tile-area-scheme-darkGreen" data-scheme="darkGreen"></div>
+            <div class="button square-button tile-area-scheme-darkOrange" data-scheme="darkOrange"></div>
+            <div class="button square-button tile-area-scheme-darkRed" data-scheme="darkRed"></div>
+            <div class="button square-button tile-area-scheme-darkPink" data-scheme="darkPink"></div>
+            <div class="button square-button tile-area-scheme-darkIndigo" data-scheme="darkIndigo"></div>
+            <div class="button square-button tile-area-scheme-darkBlue" data-scheme="darkBlue"></div>
+            <div class="button square-button tile-area-scheme-lightBlue" data-scheme="lightBlue"></div>
+            <div class="button square-button tile-area-scheme-lightTeal" data-scheme="lightTeal"></div>
+            <div class="button square-button tile-area-scheme-lightOlive" data-scheme="lightOlive"></div>
+            <div class="button square-button tile-area-scheme-lightOrange" data-scheme="lightOrange"></div>
+            <div class="button square-button tile-area-scheme-lightPink" data-scheme="lightPink"></div>
+            <div class="button square-button tile-area-scheme-grayed" data-scheme="grayed"></div>
+        </div>
+    </div>
 
-var width = 960,
-    height = 500,
-    padding = 1.5, // separation between same-color circles
-    clusterPadding = 6, // separation between different-color circles
-    maxRadius = 12;
+    <div class="tile-area tile-area-scheme-dark fg-white" style="height: 100%; max-height: 100% !important; overflow-y: scroll !important;">
+        <h1 class="tile-area-title">gologir</h1>
+        <div class="tile-area-controls">
+            <button class="square-button bg-transparent fg-white bg-grayDark bg-hover-dark no-border" onclick="showCharms('#charmSettings')"><span class="mif-cog"></span></button>
+            <a href="/" class="square-button bg-transparent fg-white bg-grayDark bg-hover-dark no-border"><span class="mif-switch"></span></a>
+        </div>
 
-var n = 200, // total number of circles
-    m = 10; // number of distinct clusters
+        <div id="tag-cloud" class="tile-group">
+            <div id="add-tile" class="tile bg-green fg-white" data-role="tile">
+                <div class="tile-content iconic">
+                    <span class="icon mif-plus"></span>
+                </div>
+                <span class="tile-label">Add</span>
+            </div>
+            <div id="delete-tile" class="tile bg-red fg-white" data-role="tile">
+                <div class="tile-content iconic">
+                    <span class="icon mif-cancel"></span>
+                </div>
+                <span class="tile-label">Delete</span>
+            </div>
+        </div>
+    </div>
 
-var color = d3.scale.category10()
-    .domain(d3.range(m));
-
-// The largest node for each cluster.
-var clusters = new Array(m);
-
-var nodes = d3.range(n).map(function() {
-  var i = Math.floor(Math.random() * m),
-      r = Math.sqrt((i + 1) / m * -Math.log(Math.random())) * maxRadius,
-      d = {cluster: i, radius: r};
-  if (!clusters[i] || (r > clusters[i].radius)) clusters[i] = d;
-  return d;
-});
-
-var force = d3.layout.force()
-    .nodes(nodes)
-    .size([width, height])
-    .gravity(.02)
-    .charge(0)
-    .on("tick", tick)
-    .start();
-
-var svg = d3.select("body").append("svg")
-    .attr("width", width)
-    .attr("height", height);
-
-var circle = svg.selectAll("circle")
-    .data(nodes)
-  .enter().append("circle")
-    .attr("r", function(d) { return d.radius; })
-    .style("fill", function(d) { return color(d.cluster); })
-    .call(force.drag);
-
-function tick(e) {
-  circle
-      .each(cluster(10 * e.alpha * e.alpha))
-      .each(collide(.5))
-      .attr("cx", function(d) { return d.x; })
-      .attr("cy", function(d) { return d.y; });
-}
-
-// Move d to be adjacent to the cluster node.
-function cluster(alpha) {
-  return function(d) {
-    var cluster = clusters[d.cluster];
-    if (cluster === d) return;
-    var x = d.x - cluster.x,
-        y = d.y - cluster.y,
-        l = Math.sqrt(x * x + y * y),
-        r = d.radius + cluster.radius;
-    if (l != r) {
-      l = (l - r) / l * alpha;
-      d.x -= x *= l;
-      d.y -= y *= l;
-      cluster.x += x;
-      cluster.y += y;
-    }
-  };
-}
-
-// Resolves collisions between d and all other circles.
-function collide(alpha) {
-  var quadtree = d3.geom.quadtree(nodes);
-  return function(d) {
-    var r = d.radius + maxRadius + Math.max(padding, clusterPadding),
-        nx1 = d.x - r,
-        nx2 = d.x + r,
-        ny1 = d.y - r,
-        ny2 = d.y + r;
-    quadtree.visit(function(quad, x1, y1, x2, y2) {
-      if (quad.point && (quad.point !== d)) {
-        var x = d.x - quad.point.x,
-            y = d.y - quad.point.y,
-            l = Math.sqrt(x * x + y * y),
-            r = d.radius + quad.point.radius + (d.cluster === quad.point.cluster ? padding : clusterPadding);
-        if (l < r) {
-          l = (l - r) / l * alpha;
-          d.x -= x *= l;
-          d.y -= y *= l;
-          quad.point.x += x;
-          quad.point.y += y;
-        }
-      }
-      return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
-    });
-  };
-}
-
-</script>
+    <div class="padding20" data-role="dialog" id="dialog" data-close-button="true" data-width="600" data-height="500">
+        <form>
+            <h1 class="text-light">Edit Tag</h1>
+            <hr class="thin"/>
+            <br />
+            <div class="input-control text full-size" data-role="input">
+                <label for="EPC">EPC</label>
+                <input type="text" name="EPC" id="EPC">
+                <button class="button helper-button clear"><span class="mif-cross"></span></button>
+            </div>
+            <br />
+            <br />
+            <div class="input-control text full-size" data-role="input">
+                <label for="PCBits">PCBits</label>
+                <input type="text" name="PCBits" id="PCBits">
+                <button class="button helper-button reveal"><span class="mif-looks"></span></button>
+            </div>
+            <br />
+            <br />
+            <div class="input-control text full-size" data-role="input">
+                <label for="Length">Length</label>
+                <input type="text" name="Length" id="Length">
+                <button class="button helper-button reveal"><span class="mif-looks"></span></button>
+            </div>
+            <br />
+            <br />
+            <div class="input-control text full-size" data-role="input">
+                <label for="EPCLengthBits">EPCLengthBits</label>
+                <input type="text" name="EPCLengthBits" id="EPCLengthBits">
+                <button class="button helper-button reveal"><span class="mif-looks"></span></button>
+            </div>
+            <br />
+            <br />
+            <div class="input-control text full-size" data-role="input">
+                <label for="ReadData">ReadData</label>
+                <input type="text" name="ReadData" id="ReadData">
+                <button class="button helper-button reveal"><span class="mif-looks"></span></button>
+            </div>
+            <br />
+            <br />
+            <div class="form-actions">
+                <button id="add-btn" type="button" class="button success" onclick="addTagFromDialog()">Add</button>
+                <button id="update-btn" type="button" class="button primary" onclick="updateTagFromDialog()">Update</button>
+                <button id="delete-btn" type="button" class="button danger" onclick="deleteTagFromDialog()">Delete</button>
+                <button type="button" class="button link" onclick="hideMetroDialog('#dialog')">Cancel</button>
+            </div>
+        </form>
+    </div>
+</body>
+<script src="/js/metro-tile.js"></script>
 <script src="/js/gologir.js"></script>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "gologir",
+  "version": "0.1.0",
+  "authors": [
+    "Iori Mizutani <iori.mizutani@gmail.com>"
+  ],
+  "description": "A mock LLRP-based logical reader for RFID Tags",
+  "private": true,
+  "dependencies": {
+    "jquery": "jquery#2.1.3",
+    "metro": "metro-ui-css#^3.0.15"
+  }
+}
