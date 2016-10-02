@@ -4,16 +4,14 @@ import (
 	"encoding/json"
 	"log"
 
+	"github.com/fatih/structs"
 	"golang.org/x/net/websocket"
 )
 
 // WebsockMessage to unmarshal JSON message from web clients
 type WebsockMessage struct {
-	UpdateType    string
-	PCBits        string
-	Length        string
-	EPCLengthBits string
-	EPC           string
+	UpdateType string
+	Tag        TagInString
 }
 
 // WebsockConn holds connection consists of the websocket and the client ip
@@ -67,7 +65,7 @@ func SockServer(ws *websocket.Conn) {
 		result := false
 		switch m.UpdateType {
 		case "add":
-			tag, err := buildTag([]string{m.PCBits, m.Length, m.EPCLengthBits, m.EPC})
+			tag, err := buildTag([]string{m.Tag.PCBits, m.Tag.Length, m.Tag.EPCLengthBits, m.Tag.EPC, m.Tag.ReadData})
 			check(err)
 			add := &addOp{
 				tag:  &tag,
@@ -77,7 +75,7 @@ func SockServer(ws *websocket.Conn) {
 				log.Println("failed", m)
 			}
 		case "delete":
-			tag, err := buildTag([]string{m.PCBits, m.Length, m.EPCLengthBits, m.EPC})
+			tag, err := buildTag([]string{m.Tag.PCBits, m.Tag.Length, m.Tag.EPCLengthBits, m.Tag.EPC, m.Tag.ReadData})
 			check(err)
 			delete := &deleteOp{
 				tag:  &tag,
@@ -86,6 +84,20 @@ func SockServer(ws *websocket.Conn) {
 			if result = <-delete.resp; result != true {
 				log.Println("failed", m)
 			}
+		case "retrieve":
+			retrieve := &retrieveOp{
+				tags: make(chan []*Tag)}
+			retrieves <- retrieve
+			tags := <-retrieve.tags
+			var tagList []map[string]interface{}
+			for _, tag := range tags {
+				t := structs.Map(tag.InString())
+				tagList = append(tagList, t)
+			}
+			log.Println(tagList)
+			clientMessage, err = json.Marshal(tagList)
+			log.Println(string(clientMessage))
+			check(err)
 		default:
 			log.Println("Unknown UpdateType:", m.UpdateType)
 		}

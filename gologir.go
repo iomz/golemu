@@ -48,6 +48,7 @@ var (
 	activeClients   = make(map[WebsockConn]int) // map containing clients
 	adds            = make(chan *addOp)
 	deletes         = make(chan *deleteOp)
+	retrieves       = make(chan *retrieveOp)
 	notify          = make(chan bool)
 )
 
@@ -201,6 +202,8 @@ func runServer() int {
 				} else {
 					delete.resp <- false
 				}
+			case retrieve := <-retrieves:
+				retrieve.tags <- tags
 			}
 		}
 	}()

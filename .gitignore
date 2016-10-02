@@ -1,2 +1,5 @@
+*.bak
 *.csv
+*.old
+*.swp
 public/*

@@ -45,7 +45,8 @@
 				sock.onopen = function(m) {
 					console.log("CONNECTION opened..." + this.readyState);}
 				sock.onmessage = function(m) {
-					$('#chatbox').append('<p>' + m.data + '</p>');}
+					$('#chatbox').append('<p>' + m.data + '</p>');
+                    console.log(m.data)}
 				sock.onerror = function(m) {
 					console.log("Error occured sending..." + m.data);}
 				sock.onclose = function(m) {
@@ -63,6 +64,7 @@
 		<button id="send">Send Message</button>
 		<button id="add-tag">add</button>
 		<button id="delete-tag">delete</button>
+		<button id="retrieve-tag">retrieve</button>
 		</div>
 
 		<div id="chat-box-container">
@@ -82,22 +84,41 @@
 			$('#add-tag').click( function(event) {
                 var add_tag = {
 	                "updateType": "add",
-		              "pcBits": "10665",
-		              "length": "16",
-		              "epcLengthBits": "80",
-		              "epc": "dc20420c4c72cf4d76de"
+                  "tag": {
+		                "pcBits": "29a9",
+		                "length": "16",
+		                "epcLengthBits": "80",
+		                "epc": "dc20420c4c72cf4d76de",
+		                "readData": "1f1f"
+                  }
                 };
 				sock.send(JSON.stringify(add_tag));
             });
 			$('#delete-tag').click( function(event) {
                 var delete_tag = {
 	                "updateType": "delete",
-		              "pcBits": "10665",
-		              "length": "16",
-		              "epcLengthBits": "80",
-		              "epc": "dc20420c4c72cf4d76de"
+                  "tag": {
+		                "pcBits": "29a9",
+		                "length": "16",
+		                "epcLengthBits": "80",
+		                "epc": "dc20420c4c72cf4d76de",
+		                "readData": "1f1f"
+                  }
                 };
 				sock.send(JSON.stringify(delete_tag));
+            });
+			$('#retrieve-tag').click( function(event) {
+                var retrieve_tag = {
+	                "updateType": "retrieve",
+                  "tag": {
+		                "pcBits": "",
+		                "length": "",
+		                "epcLengthBits": "",
+		                "epc": "",
+		                "readData": ""
+                  }
+                };
+				sock.send(JSON.stringify(retrieve_tag));
             });
 
 		</script>
