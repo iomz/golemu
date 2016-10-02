@@ -1,11 +1,20 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
-	"strings"
 
 	"golang.org/x/net/websocket"
 )
+
+// WebsockMessage to unmarshal JSON message from web clients
+type WebsockMessage struct {
+	UpdateType    string
+	PCBits        string
+	Length        string
+	EPCLengthBits string
+	EPC           string
+}
 
 // WebsockConn holds connection consists of the websocket and the client ip
 type WebsockConn struct {
@@ -16,9 +25,9 @@ type WebsockConn struct {
 // SockServer to handle messaging between clients
 func SockServer(ws *websocket.Conn) {
 	var err error
-	var clientMessage string
+	//var clientMessage string
 	// use []byte if websocket binary type is blob or arraybuffer
-	// var clientMessage []byte
+	var clientMessage []byte
 
 	// cleanup on server side
 	defer func() {
@@ -29,50 +38,60 @@ func SockServer(ws *websocket.Conn) {
 
 	client := ws.Request().RemoteAddr
 	log.Println("Client connected:", client)
-	sockCli := WebsockConn{ws, client}
-	activeClients[sockCli] = 0
+	clientSock := WebsockConn{ws, client}
+	activeClients[clientSock] = 0
 	log.Println("Number of clients connected ...", len(activeClients))
 
 	// for loop so the websocket stays open otherwise
 	// it'll close after one Receieve and Send
 	for {
-		if err = message.Receive(ws, &clientMessage); err != nil {
+		if err = websocket.Message.Receive(ws, &clientMessage); err != nil {
 			// If we cannot Read then the connection is closed
 			log.Println("Websocket Disconnected waiting", err.Error())
 			// remove the ws client conn from our active clients
-			delete(activeClients, sockCli)
+			delete(activeClients, clientSock)
 			log.Println("Number of clients still connected ...", len(activeClients))
 			return
 		}
 
-		clientMessage = sockCli.clientIP + " Said: " + clientMessage
+		//clientMessage = clientSock.clientIP + " Said: " + clientMessage
+
+		// Parse the JSON
+		m := WebsockMessage{}
+		if err = json.Unmarshal(clientMessage, &m); err != nil {
+			log.Println(err.Error())
+		}
+
 		// Handle the command
-		if strings.Contains(clientMessage, "add") {
-			// add
-			log.Println("command: add")
-			tag, err := buildTag([]string{"10665", "16", "80", "dc20420c4c72cf4d76de"})
+		// Compose result struct containing proper parameters
+		result := false
+		switch m.UpdateType {
+		case "add":
+			tag, err := buildTag([]string{m.PCBits, m.Length, m.EPCLengthBits, m.EPC})
 			check(err)
 			add := &addOp{
 				tag:  &tag,
 				resp: make(chan bool)}
 			adds <- add
-			<-add.resp
-		} else if strings.Contains(clientMessage, "delete") {
-			// delete
-			log.Println("command: delete")
-			tag, err := buildTag([]string{"10665", "16", "80", "dc20420c4c72cf4d76de"})
+			if result = <-add.resp; result != true {
+				log.Println("failed", m)
+			}
+		case "delete":
+			tag, err := buildTag([]string{m.PCBits, m.Length, m.EPCLengthBits, m.EPC})
 			check(err)
 			delete := &deleteOp{
 				tag:  &tag,
 				resp: make(chan bool)}
 			deletes <- delete
-			<-delete.resp
-		} else {
-			log.Println("command: something else")
+			if result = <-delete.resp; result != true {
+				log.Println("failed", m)
+			}
+		default:
+			log.Println("Unknown UpdateType:", m.UpdateType)
 		}
 
 		for cs := range activeClients {
-			if err = message.Send(cs.websocket, clientMessage); err != nil {
+			if err = websocket.Message.Send(cs.websocket, clientMessage); err != nil {
 				// we could not send the message to a peer
 				log.Println("Could not send message to ", cs.clientIP, err.Error())
 			}

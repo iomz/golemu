@@ -11,13 +11,12 @@ import (
 	"os/signal"
 	"runtime"
 	"strconv"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/contrib/static"
+	"github.com/gin-gonic/gin"
 	"github.com/iomz/go-llrp"
 	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -45,13 +44,10 @@ var (
 	messageID     = uint32(*initalMessageID)
 	keepaliveID   = *initialKeepaliveID
 	version       = "0.1.0"
-	pwd, _        = os.Getwd()
-	json          = websocket.JSON            // codec for JSON
-	message       = websocket.Message         // codec for string, []byte
 	activeClients = make(map[WebsockConn]int) // map containing clients
-	mutex         = &sync.Mutex{}
 	adds          = make(chan *addOp)
 	deletes       = make(chan *deleteOp)
+	notify        = make(chan bool)
 )
 
 func init() {
@@ -131,8 +127,10 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 					conn.Write(llrp.Keepalive())
 					isAlive = false
 				// When the tag queue is updated
+				// TODO: Fix to execute without LLRP conection
 				case tags := <-tagUpdated:
 					trds = buildTagReportDataStack(tags)
+					log.Println(trds)
 				}
 				if !isAlive {
 					roarTicker.Stop()
@@ -168,43 +166,43 @@ func runServer() int {
 	// Channel for communicating virtual tag updates
 	tagUpdated := make(chan []*Tag)
 
-	// Handle web
-	// Start off websocket and static file hosting
-	r := gin.Default()
-	r.Use(static.Serve("/", static.LocalFile("./public", true)))
-	r.GET("/ws", func(c *gin.Context) {
-		handler := websocket.Handler(SockServer)
-		handler.ServeHTTP(c.Writer, c.Request)
-	})
-	r.Run(":8080")
+	// Handle websocket and static file hosting with gin
+	go func() {
+		r := gin.Default()
+		r.Use(static.Serve("/", static.LocalFile("./public", true)))
+		r.GET("/ws", func(c *gin.Context) {
+			handler := websocket.Handler(SockServer)
+			handler.ServeHTTP(c.Writer, c.Request)
+		})
+		r.Run(":8080")
+	}()
 
-	for {
-		select {
-		case add := <-adds:
-			mutex.Lock()
-			if getIndexOfTag(tags, add.tag) < 0 {
-				tags = append(tags, add.tag)
-				writeTagsToCSV(tags, *file)
-				mutex.Unlock()
-				add.resp <- true
-			} else {
-				mutex.Unlock()
-				add.resp <- false
-			}
-		case delete := <-deletes:
-			mutex.Lock()
-			indexToDelete := getIndexOfTag(tags, delete.tag)
-			if indexToDelete >= 0 {
-				tags = append(tags[:indexToDelete], tags[indexToDelete+1:]...)
-				writeTagsToCSV(tags, *file)
-				mutex.Unlock()
-				delete.resp <- false
-			} else {
-				mutex.Unlock()
-				delete.resp <- true
+	// Tag management
+	go func() {
+		for {
+			select {
+			case add := <-adds:
+				if getIndexOfTag(tags, add.tag) < 0 {
+					tags = append(tags, add.tag)
+					writeTagsToCSV(tags, *file)
+					add.resp <- true
+					tagUpdated <- tags
+				} else {
+					add.resp <- false
+				}
+			case delete := <-deletes:
+				indexToDelete := getIndexOfTag(tags, delete.tag)
+				if indexToDelete >= 0 {
+					tags = append(tags[:indexToDelete], tags[indexToDelete+1:]...)
+					writeTagsToCSV(tags, *file)
+					delete.resp <- true
+					tagUpdated <- tags
+				} else {
+					delete.resp <- false
+				}
 			}
 		}
-	}
+	}()
 
 	// Handle LLRP connection
 	go func() {
