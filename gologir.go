@@ -6,18 +6,18 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"net/http"
+	//"net/http"
 	"os"
 	"os/signal"
 	"runtime"
 	"strconv"
-	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/gin-gonic/contrib/static"
+	"github.com/gin-gonic/gin"
 	"github.com/iomz/go-llrp"
-	"github.com/zenazn/goji"
 	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -41,17 +41,19 @@ var (
 
 	client = app.Command("client", "Run as a client mode.")
 
-	messageID     = uint32(*initalMessageID)
-	keepaliveID   = *initialKeepaliveID
-	version       = "0.1.0"
-	pwd, _        = os.Getwd()
-	json          = websocket.JSON            // codec for JSON
-	message       = websocket.Message         // codec for string, []byte
-	activeClients = make(map[WebsockConn]int) // map containing clients
-	mutex         = &sync.Mutex{}
-	adds          = make(chan *addOp)
-	deletes       = make(chan *deleteOp)
+	isLLRPConnAlive = false
+	messageID       = uint32(*initalMessageID)
+	keepaliveID     = *initialKeepaliveID
+	version         = "0.1.0"
+	activeClients   = make(map[WebsockConn]int) // map containing clients
+	adds            = make(chan *addOp)
+	deletes         = make(chan *deleteOp)
+	retrieves       = make(chan *retrieveOp)
+	notify          = make(chan bool)
 )
+
+func init() {
+}
 
 // Iterate through the Tags and write ROAccessReport message to the socket
 func sendROAccessReport(conn net.Conn, trds []*[]byte) error {
@@ -85,24 +87,22 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 		if err == io.EOF {
 			// Close the connection when you're done with it.
 			log.Printf("Closing LLRP connection")
-			conn.Close()
 			return
 		} else if err != nil {
 			log.Println("Error:", err.Error())
 			log.Printf("reqLen = %v\n", reqLen)
 			log.Printf("Closing LLRP connection")
-			conn.Close()
 			return
 		}
 
 		// Respond according to the LLRP packet header
 		header := binary.BigEndian.Uint16(buf[:2])
-		if header == llrp.H_SetReaderConfig || header == llrp.H_KeepaliveAck {
-			if header == llrp.H_SetReaderConfig {
+		if header == llrp.SetReaderConfigHeader || header == llrp.KeepaliveAckHeader {
+			if header == llrp.SetReaderConfigHeader {
 				// SRC received, start ROAR
 				log.Println(">>> SET_READER_CONFIG")
 				conn.Write(llrp.SetReaderConfigResponse())
-			} else if header == llrp.H_KeepaliveAck {
+			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
 				log.Println(">>> KeepaliveAck")
 			}
@@ -111,7 +111,7 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 			roarTicker := time.NewTicker(1 * time.Second)
 			KeepaliveTicker := time.NewTicker(10 * time.Second)
 			for { // Infinite loop
-				isAlive := true
+				isLLRPConnAlive = true
 				select {
 				// ROAccessReport interval tick
 				case <-roarTicker.C:
@@ -119,18 +119,18 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 					err := sendROAccessReport(conn, trds)
 					if err != nil {
 						log.Println("Error:", err.Error())
-						isAlive = false
+						isLLRPConnAlive = false
 					}
 				// Keepalive interval tick
 				case <-KeepaliveTicker.C:
 					log.Println("<<< Keepalive")
 					conn.Write(llrp.Keepalive())
-					isAlive = false
+					isLLRPConnAlive = false
 				// When the tag queue is updated
 				case tags := <-tagUpdated:
 					trds = buildTagReportDataStack(tags)
 				}
-				if !isAlive {
+				if !isLLRPConnAlive {
 					roarTicker.Stop()
 					KeepaliveTicker.Stop()
 					break
@@ -155,10 +155,8 @@ func runServer() int {
 
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
-	if err != nil {
-		log.Println("Error:", err.Error())
-		return 1
-	}
+	check(err)
+
 	// Close the listener when the application closes.
 	defer l.Close()
 	log.Println("Listening on " + ip.String() + ":" + strconv.Itoa(*port))
@@ -166,39 +164,46 @@ func runServer() int {
 	// Channel for communicating virtual tag updates
 	tagUpdated := make(chan []*Tag)
 
-	// Handle web
+	// Handle websocket and static file hosting with gin
 	go func() {
-		publicPath := pwd + "/public"
-		goji.Handle("/*", http.FileServer(http.Dir(publicPath)))
-		goji.Handle("/sock", websocket.Handler(sockServer))
+		r := gin.Default()
+		r.Use(static.Serve("/", static.LocalFile("./public", true)))
+		r.GET("/ws", func(c *gin.Context) {
+			handler := websocket.Handler(SockServer)
+			handler.ServeHTTP(c.Writer, c.Request)
+		})
+		r.Run(":8080")
+	}()
 
-		goji.Serve()
-
+	// Tag management
+	go func() {
 		for {
 			select {
 			case add := <-adds:
-				mutex.Lock()
 				if getIndexOfTag(tags, add.tag) < 0 {
 					tags = append(tags, add.tag)
 					writeTagsToCSV(tags, *file)
-					mutex.Unlock()
 					add.resp <- true
+					if isLLRPConnAlive {
+						tagUpdated <- tags
+					}
 				} else {
-					mutex.Unlock()
 					add.resp <- false
 				}
 			case delete := <-deletes:
-				mutex.Lock()
 				indexToDelete := getIndexOfTag(tags, delete.tag)
 				if indexToDelete >= 0 {
 					tags = append(tags[:indexToDelete], tags[indexToDelete+1:]...)
 					writeTagsToCSV(tags, *file)
-					mutex.Unlock()
-					delete.resp <- false
-				} else {
-					mutex.Unlock()
 					delete.resp <- true
+					if isLLRPConnAlive {
+						tagUpdated <- tags
+					}
+				} else {
+					delete.resp <- false
 				}
+			case retrieve := <-retrieves:
+				retrieve.tags <- tags
 			}
 		}
 	}()
@@ -222,6 +227,7 @@ func runServer() int {
 
 			// Handle connections in a new goroutine.
 			go handleRequest(conn, tags, tagUpdated)
+			conn.Close()
 		}
 	}()
 
@@ -253,12 +259,12 @@ func runClient() int {
 		}
 
 		header := binary.BigEndian.Uint16(buf[:2])
-		if header == llrp.H_ReaderEventNotification {
+		if header == llrp.ReaderEventNotificationHeader {
 			log.Println(">>> READER_EVENT_NOTIFICATION")
 			conn.Write(llrp.SetReaderConfig(messageID))
-		} else if header == llrp.H_SetReaderConfigResponse {
+		} else if header == llrp.SetReaderConfigResponseHeader {
 			log.Println(">>> SET_READER_CONFIG_RESPONSE")
-		} else if header == llrp.H_ROAccessReport {
+		} else if header == llrp.ROAccessReportHeader {
 			log.Println(">>> RO_ACCESS_REPORT")
 			log.Printf("Packet size: %v\n", reqLen)
 			log.Printf("% x\n", buf[:reqLen])
