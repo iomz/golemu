@@ -8,10 +8,11 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-// WebsockMessage to unmarshal JSON message from web clients
-type WebsockMessage struct {
+// TagManagementMessage to unmarshal JSON message from web clients
+type TagManagementMessage struct {
 	UpdateType string
 	Tag        TagInString
+	Tags       []map[string]interface{}
 }
 
 // WebsockConn holds connection consists of the websocket and the client ip
@@ -55,7 +56,7 @@ func SockServer(ws *websocket.Conn) {
 		//clientMessage = clientSock.clientIP + " Said: " + clientMessage
 
 		// Parse the JSON
-		m := WebsockMessage{}
+		m := TagManagementMessage{}
 		if err = json.Unmarshal(clientMessage, &m); err != nil {
 			log.Println(err.Error())
 		}
@@ -99,12 +100,16 @@ func SockServer(ws *websocket.Conn) {
 				t := structs.Map(tag.InString())
 				tagList = append(tagList, t)
 			}
-			clientMessage, err = json.Marshal(tagList)
-			check(err)
+			m = TagManagementMessage{
+				UpdateType: "retrieval",
+				Tag:        TagInString{},
+				Tags:       tagList}
 		default:
 			log.Println("Unknown UpdateType:", m.UpdateType)
 		}
 
+		clientMessage, err = json.Marshal(m)
+		check(err)
 		for cs := range activeClients {
 			if err = websocket.Message.Send(cs.websocket, string(clientMessage)); err != nil {
 				// we could not send the message to a peer
