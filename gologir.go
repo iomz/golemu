@@ -41,13 +41,14 @@ var (
 
 	client = app.Command("client", "Run as a client mode.")
 
-	messageID     = uint32(*initalMessageID)
-	keepaliveID   = *initialKeepaliveID
-	version       = "0.1.0"
-	activeClients = make(map[WebsockConn]int) // map containing clients
-	adds          = make(chan *addOp)
-	deletes       = make(chan *deleteOp)
-	notify        = make(chan bool)
+	isLLRPConnAlive = false
+	messageID       = uint32(*initalMessageID)
+	keepaliveID     = *initialKeepaliveID
+	version         = "0.1.0"
+	activeClients   = make(map[WebsockConn]int) // map containing clients
+	adds            = make(chan *addOp)
+	deletes         = make(chan *deleteOp)
+	notify          = make(chan bool)
 )
 
 func init() {
@@ -85,13 +86,11 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 		if err == io.EOF {
 			// Close the connection when you're done with it.
 			log.Printf("Closing LLRP connection")
-			conn.Close()
 			return
 		} else if err != nil {
 			log.Println("Error:", err.Error())
 			log.Printf("reqLen = %v\n", reqLen)
 			log.Printf("Closing LLRP connection")
-			conn.Close()
 			return
 		}
 
@@ -111,7 +110,7 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 			roarTicker := time.NewTicker(1 * time.Second)
 			KeepaliveTicker := time.NewTicker(10 * time.Second)
 			for { // Infinite loop
-				isAlive := true
+				isLLRPConnAlive = true
 				select {
 				// ROAccessReport interval tick
 				case <-roarTicker.C:
@@ -119,20 +118,18 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 					err := sendROAccessReport(conn, trds)
 					if err != nil {
 						log.Println("Error:", err.Error())
-						isAlive = false
+						isLLRPConnAlive = false
 					}
 				// Keepalive interval tick
 				case <-KeepaliveTicker.C:
 					log.Println("<<< Keepalive")
 					conn.Write(llrp.Keepalive())
-					isAlive = false
+					isLLRPConnAlive = false
 				// When the tag queue is updated
-				// TODO: Fix to execute without LLRP conection
 				case tags := <-tagUpdated:
 					trds = buildTagReportDataStack(tags)
-					log.Println(trds)
 				}
-				if !isAlive {
+				if !isLLRPConnAlive {
 					roarTicker.Stop()
 					KeepaliveTicker.Stop()
 					break
@@ -186,7 +183,9 @@ func runServer() int {
 					tags = append(tags, add.tag)
 					writeTagsToCSV(tags, *file)
 					add.resp <- true
-					tagUpdated <- tags
+					if isLLRPConnAlive {
+						tagUpdated <- tags
+					}
 				} else {
 					add.resp <- false
 				}
@@ -196,7 +195,9 @@ func runServer() int {
 					tags = append(tags[:indexToDelete], tags[indexToDelete+1:]...)
 					writeTagsToCSV(tags, *file)
 					delete.resp <- true
-					tagUpdated <- tags
+					if isLLRPConnAlive {
+						tagUpdated <- tags
+					}
 				} else {
 					delete.resp <- false
 				}
@@ -223,6 +224,7 @@ func runServer() int {
 
 			// Handle connections in a new goroutine.
 			go handleRequest(conn, tags, tagUpdated)
+			conn.Close()
 		}
 	}()
 
