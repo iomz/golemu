@@ -33,7 +33,7 @@ var (
 	initalMessageID    = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
 	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Short('k').Default("80000").Int()
 	port               = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
-	ip                 = app.Flag("ip", "LLRP listening address.").Short('i').Default("127.0.0.1").IP()
+	ip                 = app.Flag("ip", "LLRP listening address.").Short('i').Default("0.0.0.0").IP()
 
 	server = app.Command("server", "Run as a tag stream server.")
 	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
@@ -86,12 +86,14 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 		reqLen, err := conn.Read(buf)
 		if err == io.EOF {
 			// Close the connection when you're done with it.
+			log.Println("Error:", err.Error())
 			log.Printf("Closing LLRP connection")
+			conn.Close()
 			return
 		} else if err != nil {
 			log.Println("Error:", err.Error())
-			log.Printf("reqLen = %v\n", reqLen)
 			log.Printf("Closing LLRP connection")
+			conn.Close()
 			return
 		}
 
@@ -138,7 +140,7 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 			}
 		} else {
 			// Unknown LLRP packet received, reset the connection
-			log.Printf("Unknown header: %v\n", header)
+			log.Printf("Unknown header: %v, reqlen: %v\n", header, reqLen)
 			log.Printf("Message: %v\n", buf)
 			return
 		}
@@ -209,27 +211,26 @@ func runServer() int {
 	}()
 
 	// Handle LLRP connection
-	go func() {
-		for {
-			// Listen for an incoming connection.
-			conn, err := l.Accept()
-			if err != nil {
-				log.Println("Error:", err.Error())
-				os.Exit(2)
-			}
-
-			// Send back READER_EVENT_NOTIFICATION
-			currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
-			conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
-			atomic.AddUint32(&messageID, 1)
-			runtime.Gosched()
-			time.Sleep(time.Millisecond)
-
-			// Handle connections in a new goroutine.
-			go handleRequest(conn, tags, tagUpdated)
-			conn.Close()
+	for {
+		// Accept an incoming connection.
+		log.Println("LLRP connection initiated")
+		conn, err := l.Accept()
+		if err != nil {
+			log.Println("Error:", err.Error())
+			os.Exit(2)
 		}
-	}()
+
+		// Send back READER_EVENT_NOTIFICATION
+		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
+		log.Println("<<< READER_EVENT_NOTIFICATION")
+		atomic.AddUint32(&messageID, 1)
+		runtime.Gosched()
+		time.Sleep(time.Millisecond)
+
+		// Handle connections in a new goroutine.
+		go handleRequest(conn, tags, tagUpdated)
+	}
 
 	// Handle SIGINT and SIGTERM.
 	ch := make(chan os.Signal)
