@@ -13,13 +13,55 @@ For what?
 
 You need to confirm the tag stream events in scenarios, but not really thrilled to use a heavily armed simulator like RIFIDI Edge suite.
 
-Synopsis
+Install & Synopsis
 --
 
 ```
 $ go install
 $ gologir --help
+
+usage: gologir [<flags>] <command> [<args> ...]
+
+A mock LLRP-based logical reader for RFID Tags.
+
+Flags:
+      --help                   Show context-sensitive help (also try --help-long and --help-man).
+  -v, --verbose                Enable verbose mode.
+  -m, --initialMessageID=1000  The initial messageID to start from.
+  -k, --initialKeepaliveID=80000
+                               The initial keepaliveID to start from.
+  -p, --port=5084              LLRP listening port.
+  -i, --ip=0.0.0.0             LLRP listening address.
+      --version                Show application version.
+
+Commands:
+  help [<command>...]
+    Show help.
+
+  server [<flags>]
+    Run as a tag stream server.
+
+  client
+    Run as a client mode.
 ```
+
+Run as a server, listen 5084 port for LLRP incoming connection, 8080 port for websocket UI
+
+```
+$ gologir server
+Access http://localhost:8080 for Web GUI
+```
+
+Links
+--
+
+https://gin-gonic.github.io/gin/
+
+https://github.com/fatih/structs
+
+http://gopkg.in/alecthomas/kingpin.v2
+
+https://godoc.org/golang.org/x/net/websocket
 
 Author
 --

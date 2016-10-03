@@ -1,3 +1,4 @@
+// A simple LLRP-based logical reader mock for RFID Tags using go-llrp
 package main
 
 import (
@@ -22,33 +23,54 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
+// Constant values
 const (
 	// BUFSIZE is a general size for a buffer
 	BUFSIZE = 512
 )
 
 var (
+	// Curren Version
+	version         = "0.1.0"
+
+	// kingpin app
 	app                = kingpin.New("gologir", "A mock LLRP-based logical reader for RFID Tags.")
+	// kingpin verbose mode flag
 	verbose            = app.Flag("verbose", "Enable verbose mode.").Short('v').Bool()
-	initalMessageID    = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
+	// kingpin initial MessageID
+	initialMessageID    = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
+	// kingpin initial KeepaliveID
 	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Short('k').Default("80000").Int()
+	// kingpin LLRP listening port
 	port               = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
+	// kingpin LLRP listening IP address
 	ip                 = app.Flag("ip", "LLRP listening address.").Short('i').Default("0.0.0.0").IP()
 
+	// kingpin server command
 	server = app.Command("server", "Run as a tag stream server.")
+	// kingpin maximum tag to include in ROAccessReport
 	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
+	// kingpin tag list file
 	file   = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 
+	// kingpin client command
 	client = app.Command("client", "Run as a client mode.")
 
+	// LLRPConn flag
 	isLLRPConnAlive = false
-	messageID       = uint32(*initalMessageID)
+	// Current messageID
+	messageID       = uint32(*initialMessageID)
+	// Current KeepaliveID
 	keepaliveID     = *initialKeepaliveID
-	version         = "0.1.0"
+	// Current activeClients
 	activeClients   = make(map[WebsockConn]int) // map containing clients
+	// add tag channel
 	adds            = make(chan *addOp)
+	// delete tag channel
 	deletes         = make(chan *deleteOp)
+	// retrieve tag channel
 	retrieves       = make(chan *retrieveOp)
+	// notify tag update channel
 	notify          = make(chan bool)
 )
 
