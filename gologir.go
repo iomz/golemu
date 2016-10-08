@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	//"net/http"
 	"os"
@@ -19,6 +18,7 @@ import (
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/iomz/go-llrp"
+	"github.com/juju/loggo"
 	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -53,8 +53,8 @@ var (
 
 	// kingpin app
 	app = kingpin.New("gologir", "A mock LLRP-based logical reader for RFID Tags.")
-	// kingpin verbose mode flag
-	verbose = app.Flag("verbose", "Enable verbose mode.").Short('v').Bool()
+	// kingpin debug mode flag
+	debug = app.Flag("debug", "Enable debug mode.").Short('v').Default("false").Bool()
 	// kingpin initial MessageID
 	initialMessageID = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
 	// kingpin initial KeepaliveID
@@ -73,6 +73,9 @@ var (
 
 	// kingpin client command
 	client = app.Command("client", "Run as a client mode.")
+
+	// loggo
+	logger = loggo.GetLogger("")
 
 	// LLRPConn flag
 	isLLRPConnAlive = false
@@ -125,12 +128,12 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 		reqLen, err := conn.Read(buf)
 		if err == io.EOF {
 			// Close the connection when you're done with it.
-			log.Printf("The client is disconnected, closing LLRP connection")
+			logger.Infof("The client is disconnected, closing LLRP connection")
 			conn.Close()
 			return
 		} else if err != nil {
-			log.Println("Error:", err.Error())
-			log.Printf("Closing LLRP connection")
+			logger.Errorf(err.Error())
+			logger.Infof("Closing LLRP connection")
 			conn.Close()
 			return
 		}
@@ -140,37 +143,37 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 		if header == llrp.SetReaderConfigHeader || header == llrp.KeepaliveAckHeader {
 			if header == llrp.SetReaderConfigHeader {
 				// SRC received, start ROAR
-				log.Println(">>> SET_READER_CONFIG")
+				logger.Infof(">>> SET_READER_CONFIG")
 				conn.Write(llrp.SetReaderConfigResponse())
 			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
-				log.Println(">>> KeepaliveAck")
+				logger.Infof(">>> KeepaliveAck")
 			}
 			// TODO: ROAR and Keepalive interval
 			roarTicker := time.NewTicker(1 * time.Second)
 			keepaliveTicker := time.NewTicker(10 * time.Second)
 			for { // Infinite loop
 				isLLRPConnAlive = true
-				log.Printf("[LLRP handler select]: %v\n", trds)
+				logger.Debugf("[LLRP handler select]: %v", trds)
 				select {
 				// ROAccessReport interval tick
 				case <-roarTicker.C:
-					log.Println("### roarTicker.C")
-					log.Printf("<<< ROAccessReport(# of Tags: %v, # of TagReportData: %v\n)", trds.TotalTagCounts(), len(trds.Stack))
+					logger.Tracef("### roarTicker.C")
+					logger.Infof("<<< ROAccessReport (# of Tags: %v, # of TagReportData: %v)", trds.TotalTagCounts(), len(trds.Stack))
 					err := sendROAccessReport(conn, trds)
 					if err != nil {
-						log.Println("Error:", err.Error())
+						logger.Errorf(err.Error())
 						isLLRPConnAlive = false
 					}
 				// Keepalive interval tick
 				case <-keepaliveTicker.C:
-					log.Println("### keepaliveTicker.C")
-					log.Println("<<< Keepalive")
+					logger.Tracef("### keepaliveTicker.C")
+					logger.Infof("<<< Keepalive")
 					conn.Write(llrp.Keepalive())
 					isLLRPConnAlive = false
 				// When the tag queue is updated
 				case tags := <-tagUpdated:
-					log.Println("### TagUpdated")
+					logger.Tracef("### TagUpdated")
 					trds = buildTagReportDataStack(tags)
 				}
 				if !isLLRPConnAlive {
@@ -181,8 +184,8 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 			}
 		} else {
 			// Unknown LLRP packet received, reset the connection
-			log.Printf("Unknown header: %v, reqlen: %v\n", header, reqLen)
-			log.Printf("Message: %v\n", buf)
+			logger.Warningf("Unknown header: %v, reqlen: %v", header, reqLen)
+			logger.Warningf("Message: %v", buf)
 			return
 		}
 	}
@@ -191,7 +194,7 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 // server mode
 func runServer() int {
 	// Read virtual tags from a csv file
-	log.Printf("Loading virtual Tags from \"%v\"\n", *file)
+	logger.Infof("Loading virtual Tags from \"%v\"", *file)
 	csvIn, err := ioutil.ReadFile(*file)
 	check(err)
 	tags := loadTagsFromCSV(string(csvIn))
@@ -202,7 +205,7 @@ func runServer() int {
 
 	// Close the listener when the application closes.
 	defer l.Close()
-	log.Println("Listening on " + ip.String() + ":" + strconv.Itoa(*port))
+	logger.Infof("Listening on %v:%v", ip, *port)
 
 	// Channel for communicating virtual tag updates and signals
 	signals := make(chan os.Signal)
@@ -255,7 +258,7 @@ func runServer() int {
 				tagManager <- cmd
 			case signal := <-signals:
 				// Handle SIGINT and SIGTERM.
-				log.Println(signal)
+				logger.Infof("%v", signal)
 				os.Exit(0)
 			}
 		}
@@ -264,17 +267,17 @@ func runServer() int {
 	// Handle LLRP connection
 	for {
 		// Accept an incoming connection.
-		log.Println("LLRP connection initiated")
+		logger.Infof("LLRP connection initiated")
 		conn, err := l.Accept()
 		if err != nil {
-			log.Println("Error:", err.Error())
+			logger.Errorf(err.Error())
 			os.Exit(2)
 		}
 
 		// Send back READER_EVENT_NOTIFICATION
 		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
 		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
-		log.Println("<<< READER_EVENT_NOTIFICATION")
+		logger.Infof("<<< READER_EVENT_NOTIFICATION")
 		atomic.AddUint32(&messageID, 1)
 		runtime.Gosched()
 		time.Sleep(time.Millisecond)
@@ -298,24 +301,24 @@ func runClient() int {
 			// Close the connection when you're done with it.
 			return 0
 		} else if err != nil {
-			log.Println("Error:", err.Error())
-			log.Printf("reqLen = %v\n", reqLen)
+			logger.Errorf(err.Error())
+			logger.Errorf("reqLen = %v", reqLen)
 			conn.Close()
 			break
 		}
 
 		header := binary.BigEndian.Uint16(buf[:2])
 		if header == llrp.ReaderEventNotificationHeader {
-			log.Println(">>> READER_EVENT_NOTIFICATION")
+			logger.Infof(">>> READER_EVENT_NOTIFICATION")
 			conn.Write(llrp.SetReaderConfig(messageID))
 		} else if header == llrp.SetReaderConfigResponseHeader {
-			log.Println(">>> SET_READER_CONFIG_RESPONSE")
+			logger.Infof(">>> SET_READER_CONFIG_RESPONSE")
 		} else if header == llrp.ROAccessReportHeader {
-			log.Println(">>> RO_ACCESS_REPORT")
-			log.Printf("Packet size: %v\n", reqLen)
-			log.Printf("% x\n", buf[:reqLen])
+			logger.Infof(">>> RO_ACCESS_REPORT")
+			logger.Debugf("Packet size: %v\n", reqLen)
+			logger.Debugf("% x\n", buf[:reqLen])
 		} else {
-			log.Printf("Unknown header: %v\n", header)
+			logger.Warningf("Unknown header: %v\n", header)
 		}
 	}
 	return 0
@@ -323,7 +326,17 @@ func runClient() int {
 
 func main() {
 	app.Version(version)
-	switch kingpin.MustParse(app.Parse(os.Args[1:])) {
+	parse := kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	if *debug {
+		loggo.ConfigureLoggers("TRACE")
+		gin.SetMode(gin.DebugMode)
+	} else {
+		loggo.ConfigureLoggers("INFO")
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	switch parse {
 	case server.FullCommand():
 		os.Exit(runServer())
 	case client.FullCommand():

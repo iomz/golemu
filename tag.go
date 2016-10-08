@@ -5,7 +5,6 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"io"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -188,11 +187,11 @@ func writeTagsToCSV(tags []*Tag, output string) {
 	for _, tag := range tags {
 		record := []string{strconv.FormatUint(uint64(tag.PCBits), 16), strconv.FormatUint(uint64(tag.Length), 10), strconv.FormatUint(uint64(tag.EPCLengthBits), 10), hex.EncodeToString(tag.EPC), hex.EncodeToString(tag.ReadData)}
 		if err := w.Write(record); err != nil {
-			log.Fatalln("error writing record to csv:", err)
+			logger.Criticalf("Writing record to csv: %v", err.Error())
 		}
 		w.Flush()
 		if err := w.Error(); err != nil {
-			log.Fatal(err)
+			logger.Errorf(err.Error())
 		}
 	}
 	file.Close()
