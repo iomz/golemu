@@ -31,27 +31,27 @@ const (
 
 var (
 	// Curren Version
-	version         = "0.1.0"
+	version = "0.1.0"
 
 	// kingpin app
-	app                = kingpin.New("gologir", "A mock LLRP-based logical reader for RFID Tags.")
+	app = kingpin.New("gologir", "A mock LLRP-based logical reader for RFID Tags.")
 	// kingpin verbose mode flag
-	verbose            = app.Flag("verbose", "Enable verbose mode.").Short('v').Bool()
+	verbose = app.Flag("verbose", "Enable verbose mode.").Short('v').Bool()
 	// kingpin initial MessageID
-	initialMessageID    = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
+	initialMessageID = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
 	// kingpin initial KeepaliveID
 	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Short('k').Default("80000").Int()
 	// kingpin LLRP listening port
-	port               = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
+	port = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
 	// kingpin LLRP listening IP address
-	ip                 = app.Flag("ip", "LLRP listening address.").Short('i').Default("0.0.0.0").IP()
+	ip = app.Flag("ip", "LLRP listening address.").Short('i').Default("0.0.0.0").IP()
 
 	// kingpin server command
 	server = app.Command("server", "Run as a tag stream server.")
 	// kingpin maximum tag to include in ROAccessReport
 	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
 	// kingpin tag list file
-	file   = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
+	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 
 	// kingpin client command
 	client = app.Command("client", "Run as a client mode.")
@@ -59,29 +59,31 @@ var (
 	// LLRPConn flag
 	isLLRPConnAlive = false
 	// Current messageID
-	messageID       = uint32(*initialMessageID)
+	messageID = uint32(*initialMessageID)
 	// Current KeepaliveID
-	keepaliveID     = *initialKeepaliveID
+	keepaliveID = *initialKeepaliveID
 	// Current activeClients
-	activeClients   = make(map[WebsockConn]int) // map containing clients
+	activeClients = make(map[WebsockConn]int) // map containing clients
 	// add tag channel
-	adds            = make(chan *addOp)
+	adds = make(chan *addOp)
 	// delete tag channel
-	deletes         = make(chan *deleteOp)
+	deletes = make(chan *deleteOp)
 	// retrieve tag channel
-	retrieves       = make(chan *retrieveOp)
+	retrieves = make(chan *retrieveOp)
 	// notify tag update channel
-	notify          = make(chan bool)
+	notify = make(chan bool)
+	// update TagReportDataStack when tag is updated
+	tagUpdated = make(chan []*Tag)
 )
 
 func init() {
 }
 
 // Iterate through the Tags and write ROAccessReport message to the socket
-func sendROAccessReport(conn net.Conn, trds []*[]byte) error {
-	for _, trd := range trds {
+func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
+	for _, trd := range trds.Stack {
 		// Append TagReportData to ROAccessReport
-		roar := llrp.ROAccessReport(*trd, messageID)
+		roar := llrp.ROAccessReport(trd.Parameter, messageID)
 		atomic.AddUint32(&messageID, 1)
 		runtime.Gosched()
 
@@ -99,17 +101,17 @@ func sendROAccessReport(conn net.Conn, trds []*[]byte) error {
 }
 
 // Handles incoming requests.
-func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
+func handleRequest(conn net.Conn, tags []*Tag) {
 	// Make a buffer to hold incoming data.
 	buf := make([]byte, BUFSIZE)
+	trds := buildTagReportDataStack(tags)
 
 	for {
 		// Read the incoming connection into the buffer.
 		reqLen, err := conn.Read(buf)
 		if err == io.EOF {
 			// Close the connection when you're done with it.
-			log.Println("Error:", err.Error())
-			log.Printf("Closing LLRP connection")
+			log.Printf("The client is disconnected, closing LLRP connection")
 			conn.Close()
 			return
 		} else if err != nil {
@@ -130,33 +132,36 @@ func handleRequest(conn net.Conn, tags []*Tag, tagUpdated chan []*Tag) {
 				// KA receieved, continue ROAR
 				log.Println(">>> KeepaliveAck")
 			}
-			trds := buildTagReportDataStack(tags)
 			// TODO: ROAR and Keepalive interval
 			roarTicker := time.NewTicker(1 * time.Second)
-			KeepaliveTicker := time.NewTicker(10 * time.Second)
+			keepaliveTicker := time.NewTicker(10 * time.Second)
 			for { // Infinite loop
 				isLLRPConnAlive = true
+				log.Printf("[LLRP handler select]: %v\n", trds)
 				select {
 				// ROAccessReport interval tick
 				case <-roarTicker.C:
-					log.Println("<<< ROAccessReport")
+					log.Println("### roarTicker.C")
+					log.Printf("<<< ROAccessReport(# of Tags: %v, # of TagReportData: %v\n)", trds.TotalTagCounts(), len(trds.Stack))
 					err := sendROAccessReport(conn, trds)
 					if err != nil {
 						log.Println("Error:", err.Error())
 						isLLRPConnAlive = false
 					}
 				// Keepalive interval tick
-				case <-KeepaliveTicker.C:
+				case <-keepaliveTicker.C:
+					log.Println("### keepaliveTicker.C")
 					log.Println("<<< Keepalive")
 					conn.Write(llrp.Keepalive())
 					isLLRPConnAlive = false
 				// When the tag queue is updated
 				case tags := <-tagUpdated:
+					log.Println("### TagUpdated")
 					trds = buildTagReportDataStack(tags)
 				}
 				if !isLLRPConnAlive {
 					roarTicker.Stop()
-					KeepaliveTicker.Stop()
+					keepaliveTicker.Stop()
 					break
 				}
 			}
@@ -185,8 +190,9 @@ func runServer() int {
 	defer l.Close()
 	log.Println("Listening on " + ip.String() + ":" + strconv.Itoa(*port))
 
-	// Channel for communicating virtual tag updates
-	tagUpdated := make(chan []*Tag)
+	// Channel for communicating virtual tag updates and signals
+	signals := make(chan os.Signal)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
 	// Handle websocket and static file hosting with gin
 	go func() {
@@ -228,6 +234,10 @@ func runServer() int {
 				}
 			case retrieve := <-retrieves:
 				retrieve.tags <- tags
+			case signal := <-signals:
+				// Handle SIGINT and SIGTERM.
+				log.Println(signal)
+				os.Exit(0)
 			}
 		}
 	}()
@@ -251,14 +261,8 @@ func runServer() int {
 		time.Sleep(time.Millisecond)
 
 		// Handle connections in a new goroutine.
-		go handleRequest(conn, tags, tagUpdated)
+		go handleRequest(conn, tags)
 	}
-
-	// Handle SIGINT and SIGTERM.
-	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	log.Println(<-ch)
-	return 0
 }
 
 // client mode

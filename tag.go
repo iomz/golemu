@@ -31,20 +31,6 @@ type TagInString struct {
 	ReadData      string
 }
 
-type addOp struct {
-	tag  *Tag
-	resp chan bool
-}
-
-type deleteOp struct {
-	tag  *Tag
-	resp chan bool
-}
-
-type retrieveOp struct {
-	tags chan []*Tag
-}
-
 // Equal to another Tag by taking one as its argument
 // return true if they are the same
 func (t Tag) Equal(tt Tag) bool {
@@ -62,6 +48,41 @@ func (t Tag) InString() *TagInString {
 		EPCLengthBits: strconv.FormatUint(uint64(t.EPCLengthBits), 10),
 		EPC:           hex.EncodeToString(t.EPC),
 		ReadData:      hex.EncodeToString(t.ReadData)}
+}
+
+// TagReportData holds an actual parameter in byte and
+// how many tags are included in the parameter
+type TagReportData struct {
+	Parameter []byte
+	TagCount  uint
+}
+
+// TagReportDataStack is a stack of TagReportData
+type TagReportDataStack struct {
+	Stack []*TagReportData
+}
+
+// TotalTagCounts returns how many tags are included in the TagReportDataStack
+func (trds TagReportDataStack) TotalTagCounts() uint {
+	ttc := uint(0)
+	for _, trd := range trds.Stack {
+		ttc += trd.TagCount
+	}
+	return ttc
+}
+
+type addOp struct {
+	tag  *Tag
+	resp chan bool
+}
+
+type deleteOp struct {
+	tag  *Tag
+	resp chan bool
+}
+
+type retrieveOp struct {
+	tags chan []*Tag
 }
 
 // Construct Tag struct from Tag info strings
@@ -128,36 +149,38 @@ func buildTagReportDataParameter(tag *Tag) []byte {
 	osr := llrp.C1G2ReadOpSpecResult(tag.ReadData)
 
 	// Merge them into TagReportData
-	trd := llrp.TagReportData(epcd, prssi, aptd, osr)
-
-	return trd
+	return llrp.TagReportData(epcd, prssi, aptd, osr)
 }
 
-func buildTagReportDataStack(tags []*Tag) []*[]byte {
-	var trds []*[]byte
-	tagCount := 0
-	trdIndex := 0
+func buildTagReportDataStack(tags []*Tag) *TagReportDataStack {
+	var param []byte
+	var trd *TagReportData
+	var trds TagReportDataStack
+	p := &trds
+	si := 0
 
 	// Iterate through tags and divide them into TRD stacks
 	for _, tag := range tags {
-		tagCount++
-		// TODO: Need to set ceiling for too large payload?
-		if tagCount > *maxTag && *maxTag != 0 {
-			trd := buildTagReportDataParameter(tag)
-			trds = append(trds, &trd)
-			trdIndex++
-			tagCount = 1
+		if len(p.Stack) != 0 && int(p.Stack[si].TagCount+1) > *maxTag && *maxTag != 0 {
+			// When exceeds maxTag per TRD, append another TRD in the stack
+			param = buildTagReportDataParameter(tag)
+			trd = &TagReportData{Parameter: param, TagCount: 1}
+			p.Stack = append(p.Stack, trd)
+			si++
 		} else {
-			trd := buildTagReportDataParameter(tag)
-			if len(trds) == 0 {
-				trds = append(trds, &trd)
+			param = buildTagReportDataParameter(tag)
+			if len(p.Stack) == 0 {
+				// First TRD
+				trd = &TagReportData{Parameter: param, TagCount: 1}
+				p.Stack = []*TagReportData{trd}
 			} else {
-				*(trds[trdIndex]) = append(*(trds[trdIndex]), trd...)
+				// Append TRD to an existing TRD
+				p.Stack[si].Parameter = append(p.Stack[si].Parameter, param...)
+				p.Stack[si].TagCount++
 			}
 		}
 	}
-
-	return trds
+	return p
 }
 
 func getIndexOfTag(tags []*Tag, t *Tag) int {
