@@ -8,8 +8,8 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-// TagManagementMessage to unmarshal JSON message from web clients
-type TagManagementMessage struct {
+// WebsocketMessage to unmarshal JSON message from web clients
+type WebsocketMessage struct {
 	UpdateType string
 	Tag        TagInString
 	Tags       []map[string]interface{}
@@ -56,7 +56,7 @@ func SockServer(ws *websocket.Conn) {
 		//clientMessage = clientSock.clientIP + " Said: " + clientMessage
 
 		// Parse the JSON
-		m := TagManagementMessage{}
+		m := WebsocketMessage{}
 		if err = json.Unmarshal(clientMessage, &m); err != nil {
 			log.Println(err.Error())
 		}
@@ -64,17 +64,15 @@ func SockServer(ws *websocket.Conn) {
 		// Handle the command
 		// Compose result struct containing proper parameters
 		// TODO: separate actions into functions
-		result := false
 		switch m.UpdateType {
 		case "add":
 			tag, err := buildTag([]string{m.Tag.PCBits, m.Tag.Length, m.Tag.EPCLengthBits, m.Tag.EPC, m.Tag.ReadData})
-			// TODO: buildTag fail notice
 			check(err)
-			add := &addOp{
-				tag:  &tag,
-				resp: make(chan bool)}
-			adds <- add
-			if result = <-add.resp; result {
+			add := &TagManager{
+				action: AddTags,
+				tags:   []*Tag{&tag}}
+			tagManager <- add
+			if add = <-tagManager; len(add.tags) != 0 {
 				log.Println(m)
 			} else {
 				log.Println("failed", m)
@@ -82,29 +80,29 @@ func SockServer(ws *websocket.Conn) {
 			}
 		case "delete":
 			tag, err := buildTag([]string{m.Tag.PCBits, m.Tag.Length, m.Tag.EPCLengthBits, m.Tag.EPC, m.Tag.ReadData})
-			// TODO: buildTag fail notice
 			check(err)
-			delete := &deleteOp{
-				tag:  &tag,
-				resp: make(chan bool)}
-			deletes <- delete
-			if result = <-delete.resp; result {
+			delete := &TagManager{
+				action: DeleteTags,
+				tags:   []*Tag{&tag}}
+			tagManager <- delete
+			if delete = <-tagManager; len(delete.tags) != 0 {
 				log.Println(m)
 			} else {
 				log.Println("failed", m)
 				m.UpdateType = "error"
 			}
 		case "retrieve":
-			retrieve := &retrieveOp{
-				tags: make(chan []*Tag)}
-			retrieves <- retrieve
-			tags := <-retrieve.tags
+			retrieve := &TagManager{
+				action: RetrieveTags,
+				tags:   []*Tag{}}
+			tagManager <- retrieve
+			retrieve = <-tagManager
 			var tagList []map[string]interface{}
-			for _, tag := range tags {
+			for _, tag := range retrieve.tags {
 				t := structs.Map(tag.InString())
 				tagList = append(tagList, t)
 			}
-			m = TagManagementMessage{
+			m = WebsocketMessage{
 				UpdateType: "retrieval",
 				Tag:        TagInString{},
 				Tags:       tagList}

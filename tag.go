@@ -71,20 +71,6 @@ func (trds TagReportDataStack) TotalTagCounts() uint {
 	return ttc
 }
 
-type addOp struct {
-	tag  *Tag
-	resp chan bool
-}
-
-type deleteOp struct {
-	tag  *Tag
-	resp chan bool
-}
-
-type retrieveOp struct {
-	tags chan []*Tag
-}
-
 // Construct Tag struct from Tag info strings
 // TODO: take map instead of []string
 func buildTag(record []string) (Tag, error) {

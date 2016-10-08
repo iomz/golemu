@@ -23,10 +23,28 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
+// ManagementAction is a type for TagManager
+type ManagementAction int
+
+const (
+	// RetrieveTags is a const for retrieving tags
+	RetrieveTags ManagementAction = iota
+	// AddTags is a const for adding tags
+	AddTags
+	// DeleteTags is a const for deleting tags
+	DeleteTags
+)
+
+// TagManager is a struct for tag management channel
+type TagManager struct {
+	action ManagementAction
+	tags   []*Tag
+}
+
 // Constant values
 const (
-	// BUFSIZE is a general size for a buffer
-	BUFSIZE = 512
+	// BufferSize is a general size for a buffer
+	BufferSize = 512
 )
 
 var (
@@ -64,12 +82,8 @@ var (
 	keepaliveID = *initialKeepaliveID
 	// Current activeClients
 	activeClients = make(map[WebsockConn]int) // map containing clients
-	// add tag channel
-	adds = make(chan *addOp)
-	// delete tag channel
-	deletes = make(chan *deleteOp)
-	// retrieve tag channel
-	retrieves = make(chan *retrieveOp)
+	// Tag management channel
+	tagManager = make(chan *TagManager)
 	// notify tag update channel
 	notify = make(chan bool)
 	// update TagReportDataStack when tag is updated
@@ -103,7 +117,7 @@ func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
 // Handles incoming requests.
 func handleRequest(conn net.Conn, tags []*Tag) {
 	// Make a buffer to hold incoming data.
-	buf := make([]byte, BUFSIZE)
+	buf := make([]byte, BufferSize)
 	trds := buildTagReportDataStack(tags)
 
 	for {
@@ -205,35 +219,40 @@ func runServer() int {
 		r.Run(":8080")
 	}()
 
-	// Tag management
 	go func() {
 		for {
 			select {
-			case add := <-adds:
-				if getIndexOfTag(tags, add.tag) < 0 {
-					tags = append(tags, add.tag)
-					writeTagsToCSV(tags, *file)
-					add.resp <- true
-					if isLLRPConnAlive {
-						tagUpdated <- tags
+			case cmd := <-tagManager:
+				// Tag management
+				res := []*Tag{}
+				switch cmd.action {
+				case AddTags:
+					for _, t := range cmd.tags {
+						if i := getIndexOfTag(tags, t); i < 0 {
+							tags = append(tags, t)
+							res = append(res, t)
+							writeTagsToCSV(tags, *file)
+							if isLLRPConnAlive {
+								tagUpdated <- tags
+							}
+						}
 					}
-				} else {
-					add.resp <- false
-				}
-			case delete := <-deletes:
-				indexToDelete := getIndexOfTag(tags, delete.tag)
-				if indexToDelete >= 0 {
-					tags = append(tags[:indexToDelete], tags[indexToDelete+1:]...)
-					writeTagsToCSV(tags, *file)
-					delete.resp <- true
-					if isLLRPConnAlive {
-						tagUpdated <- tags
+				case DeleteTags:
+					for _, t := range cmd.tags {
+						if i := getIndexOfTag(tags, t); i >= 0 {
+							tags = append(tags[:i], tags[i+1:]...)
+							res = append(res, t)
+							writeTagsToCSV(tags, *file)
+							if isLLRPConnAlive {
+								tagUpdated <- tags
+							}
+						}
 					}
-				} else {
-					delete.resp <- false
+				case RetrieveTags:
+					res = tags
 				}
-			case retrieve := <-retrieves:
-				retrieve.tags <- tags
+				cmd.tags = res
+				tagManager <- cmd
 			case signal := <-signals:
 				// Handle SIGINT and SIGTERM.
 				log.Println(signal)
@@ -271,7 +290,7 @@ func runClient() int {
 	conn, err := net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
 	check(err)
 
-	buf := make([]byte, BUFSIZE)
+	buf := make([]byte, BufferSize)
 	for {
 		// Read the incoming connection into the buffer.
 		reqLen, err := conn.Read(buf)
