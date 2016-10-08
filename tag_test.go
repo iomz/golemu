@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io/ioutil"
 	"testing"
 )
 
@@ -64,14 +65,19 @@ func TestBuildTagReportDataParameter(t *testing.T) {
 	for _, tt := range trdtests {
 		tag, err := buildTag(tt.in)
 		check(err)
-		trd := buildTagReportDataParameter(&tag)
-		if !bytes.Equal(trd, tt.out) {
-			t.Errorf("%v => %v, want %v", tt.in, trd, tt.out)
+		param := buildTagReportDataParameter(&tag)
+		if !bytes.Equal(param, tt.out) {
+			t.Errorf("%v => %v, want %v", tt.in, param, tt.out)
 		}
 	}
 }
 
 func TestBuildTagReportDataStack(t *testing.T) {
+	csvIn, _ := ioutil.ReadFile("tags.csv")
+	tags := loadTagsFromCSV(string(csvIn))
+	trds := buildTagReportDataStack(tags)
+	t.Logf("TotalTagCounts: %v\n", trds.TotalTagCounts())
+	t.Logf("TotalTagReportData: %v\n", len(trds.Stack))
 }
 
 func TestGetIndexOfTag(t *testing.T) {
