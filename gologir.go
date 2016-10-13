@@ -6,7 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
-	//"net/http"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
 	"github.com/juju/loggo"
 	"golang.org/x/net/websocket"
@@ -191,6 +192,22 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 	}
 }
 
+// APIPostTag redirects the tag addition request
+func APIPostTag(c *gin.Context) {
+	var json TagInString
+	c.BindWith(&json, binding.JSON)
+	ReqAddTag("add", json)
+	c.String(http.StatusCreated, "Post requested!\n")
+}
+
+// APIDeleteTag redirects the tag deletion request
+func APIDeleteTag(c *gin.Context) {
+	var json TagInString
+	c.BindWith(&json, binding.JSON)
+	ReqDeleteTag("delete", json)
+	c.String(http.StatusNoContent, "Delete requested!\n")
+}
+
 // server mode
 func runServer() int {
 	// Read virtual tags from a csv file
@@ -219,6 +236,9 @@ func runServer() int {
 			handler := websocket.Handler(SockServer)
 			handler.ServeHTTP(c.Writer, c.Request)
 		})
+		v1 := r.Group("api/v1")
+		v1.POST("/tags", APIPostTag)
+		v1.DELETE("/tags", APIDeleteTag)
 		r.Run(":8080")
 	}()
 

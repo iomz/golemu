@@ -23,11 +23,11 @@ type Tag struct {
 
 // TagInString to represent Tag struct all in string
 type TagInString struct {
-	PCBits        string
-	Length        string
-	EPCLengthBits string
-	EPC           string
-	ReadData      string
+	PCBits        string `json:"PCBits"`
+	Length        string `json:"Length"`
+	EPCLengthBits string `json:"EPCLengthBits"`
+	EPC           string `json:"EPC"`
+	ReadData      string `json:"ReadData"`
 }
 
 // Equal to another Tag by taking one as its argument

@@ -20,6 +20,53 @@ type WebsockConn struct {
 	clientIP  string
 }
 
+// ReqAddTag handles a tag addition request
+func ReqAddTag(ut string, req TagInString) string {
+	tag, err := buildTag([]string{req.PCBits, req.Length, req.EPCLengthBits, req.EPC, req.ReadData})
+	check(err)
+	add := &TagManager{
+		action: AddTags,
+		tags:   []*Tag{&tag}}
+	tagManager <- add
+	if add = <-tagManager; len(add.tags) != 0 {
+		logger.Debugf("%v, %v", ut, req)
+		return ut
+	}
+	logger.Errorf("failed %v, %v", ut, req)
+	return "error"
+}
+
+// ReqDeleteTag handles a tag deletion request
+func ReqDeleteTag(ut string, req TagInString) string {
+	tag, err := buildTag([]string{req.PCBits, req.Length, req.EPCLengthBits, req.EPC, req.ReadData})
+	check(err)
+	delete := &TagManager{
+		action: DeleteTags,
+		tags:   []*Tag{&tag}}
+	tagManager <- delete
+	if delete = <-tagManager; len(delete.tags) != 0 {
+		logger.Debugf("%v %v", ut, req)
+		return ut
+	}
+	logger.Errorf("failed %v %v", ut, req)
+	return "error"
+}
+
+// ReqRetrieveTag handles a tag retrieval request
+func ReqRetrieveTag() []map[string]interface{} {
+	retrieve := &TagManager{
+		action: RetrieveTags,
+		tags:   []*Tag{}}
+	tagManager <- retrieve
+	retrieve = <-tagManager
+	var tagList []map[string]interface{}
+	for _, tag := range retrieve.tags {
+		t := structs.Map(tag.InString())
+		tagList = append(tagList, t)
+	}
+	return tagList
+}
+
 // SockServer to handle messaging between clients
 func SockServer(ws *websocket.Conn) {
 	var err error
@@ -45,10 +92,10 @@ func SockServer(ws *websocket.Conn) {
 	for {
 		if err = websocket.Message.Receive(ws, &clientMessage); err != nil {
 			// If we cannot Read then the connection is closed
-			logger.Errorf("Websocket Disconnected waiting", err.Error())
+			logger.Errorf("Websocket Disconnected waiting %v", err.Error())
 			// remove the ws client conn from our active clients
 			delete(activeClients, clientSock)
-			logger.Debugf("Number of clients still connected ...", len(activeClients))
+			logger.Debugf("Number of clients still connected ... %v", len(activeClients))
 			return
 		}
 
@@ -65,42 +112,11 @@ func SockServer(ws *websocket.Conn) {
 		// TODO: separate actions into functions
 		switch m.UpdateType {
 		case "add":
-			tag, err := buildTag([]string{m.Tag.PCBits, m.Tag.Length, m.Tag.EPCLengthBits, m.Tag.EPC, m.Tag.ReadData})
-			check(err)
-			add := &TagManager{
-				action: AddTags,
-				tags:   []*Tag{&tag}}
-			tagManager <- add
-			if add = <-tagManager; len(add.tags) != 0 {
-				logger.Debugf("%v", m)
-			} else {
-				logger.Errorf("failed", m)
-				m.UpdateType = "error"
-			}
+			m.UpdateType = ReqAddTag(m.UpdateType, m.Tag)
 		case "delete":
-			tag, err := buildTag([]string{m.Tag.PCBits, m.Tag.Length, m.Tag.EPCLengthBits, m.Tag.EPC, m.Tag.ReadData})
-			check(err)
-			delete := &TagManager{
-				action: DeleteTags,
-				tags:   []*Tag{&tag}}
-			tagManager <- delete
-			if delete = <-tagManager; len(delete.tags) != 0 {
-				logger.Debugf("%v", m)
-			} else {
-				logger.Errorf("failed", m)
-				m.UpdateType = "error"
-			}
+			m.UpdateType = ReqDeleteTag(m.UpdateType, m.Tag)
 		case "retrieve":
-			retrieve := &TagManager{
-				action: RetrieveTags,
-				tags:   []*Tag{}}
-			tagManager <- retrieve
-			retrieve = <-tagManager
-			var tagList []map[string]interface{}
-			for _, tag := range retrieve.tags {
-				t := structs.Map(tag.InString())
-				tagList = append(tagList, t)
-			}
+			tagList := ReqRetrieveTag()
 			m = WebsocketMessage{
 				UpdateType: "retrieval",
 				Tag:        TagInString{},
