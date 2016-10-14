@@ -212,6 +212,13 @@ func APIDeleteTag(c *gin.Context) {
 func runServer() int {
 	// Read virtual tags from a csv file
 	logger.Infof("Loading virtual Tags from \"%v\"", *file)
+
+	if _, err := os.Stat(*file); os.IsNotExist(err) {
+		_, err := os.Create(*file)
+		check(err)
+		logger.Infof("%v created.", *file)
+	}
+
 	csvIn, err := ioutil.ReadFile(*file)
 	check(err)
 	tags := loadTagsFromCSV(string(csvIn))
