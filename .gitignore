@@ -1,5 +1,6 @@
 *.bak
 *.csv
+*.json
 *.old
 *.swp
 public/*
