@@ -63,10 +63,12 @@ var (
 	// kingpin LLRP listening port
 	port = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
 	// kingpin LLRP listening IP address
-	ip = app.Flag("ip", "LLRP listening address.").Short('i').Default("0.0.0.0").IP()
+	ip = app.Flag("ip", "LLRP listening address.").Short('a').Default("0.0.0.0").IP()
 
 	// kingpin server command
 	server = app.Command("server", "Run as a tag stream server.")
+	// kingpin report interval
+	reportInterval = server.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("1000").Int()
 	// kingpin maximum tag to include in ROAccessReport
 	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
 	// kingpin tag list file
@@ -150,8 +152,8 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 				// KA receieved, continue ROAR
 				logger.Infof(">>> KeepaliveAck")
 			}
-			// TODO: ROAR and Keepalive interval
-			roarTicker := time.NewTicker(1 * time.Second)
+			// Tick ROAR and Keepalive interval
+			roarTicker := time.NewTicker(time.Duration(*reportInterval) * time.Millisecond)
 			keepaliveTicker := time.NewTicker(10 * time.Second)
 			for { // Infinite loop
 				isLLRPConnAlive = true
