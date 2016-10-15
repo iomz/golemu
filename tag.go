@@ -30,10 +30,19 @@ type TagInString struct {
 	ReadData      string `json:"ReadData"`
 }
 
-// Equal to another Tag by taking one as its argument
+// IsEqual to another Tag by taking one as its argument
 // return true if they are the same
-func (t Tag) Equal(tt Tag) bool {
+func (t Tag) IsEqual(tt Tag) bool {
 	if t.PCBits == tt.PCBits && t.Length == tt.Length && tt.EPCLengthBits == tt.EPCLengthBits && bytes.Equal(t.EPC, tt.EPC) && bytes.Equal(t.ReadData, tt.ReadData) {
+		return true
+	}
+	return false
+}
+
+// IsDuplicate to test another Tag by comparing only EPC
+// return true if the EPCs are the same
+func (t Tag) IsDuplicate(tt Tag) bool {
+	if bytes.Equal(t.EPC, tt.EPC) {
 		return true
 	}
 	return false
@@ -171,7 +180,7 @@ func buildTagReportDataStack(tags []*Tag) *TagReportDataStack {
 func getIndexOfTag(tags []*Tag, t *Tag) int {
 	index := 0
 	for _, tag := range tags {
-		if tag.Equal(*t) {
+		if tag.IsDuplicate(*t) {
 			return index
 		}
 		index++

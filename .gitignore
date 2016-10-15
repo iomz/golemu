@@ -5,3 +5,4 @@
 *.swp
 public/*
 public/vendor/*
+scenario*
