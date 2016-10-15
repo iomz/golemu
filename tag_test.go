@@ -22,7 +22,7 @@ func TestBuildTag(t *testing.T) {
 	for _, tt := range tagtests {
 		tag, err := buildTag(tt.in)
 		check(err)
-		if !tag.Equal(tt.out) {
+		if !tag.IsEqual(tt.out) {
 			t.Errorf("%v => %v, want %v", tt.in, tag, tt.out)
 		}
 	}
@@ -47,7 +47,7 @@ func TestLoadTagsFromCSV(t *testing.T) {
 	for _, tt := range csvtests {
 		tags := loadTagsFromCSV(tt.in)
 		for i, tag := range tags {
-			tag.Equal(tt.out[i])
+			tag.IsEqual(tt.out[i])
 		}
 	}
 }
@@ -66,7 +66,7 @@ func TestBuildTagReportDataParameter(t *testing.T) {
 		tag, err := buildTag(tt.in)
 		check(err)
 		param := buildTagReportDataParameter(&tag)
-		if !bytes.Equal(param, tt.out) {
+		if !bytes.IsEqual(param, tt.out) {
 			t.Errorf("%v => %v, want %v", tt.in, param, tt.out)
 		}
 	}

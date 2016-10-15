@@ -49,7 +49,7 @@ const (
 )
 
 var (
-	// Curren Version
+	// Current Version
 	version = "0.1.0"
 
 	// kingpin app
@@ -196,18 +196,24 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 
 // APIPostTag redirects the tag addition request
 func APIPostTag(c *gin.Context) {
-	var json TagInString
+	var json []TagInString
 	c.BindWith(&json, binding.JSON)
-	ReqAddTag("add", json)
-	c.String(http.StatusCreated, "Post requested!\n")
+	if res := ReqAddTag("add", json); res == "error" {
+		c.String(http.StatusAlreadyReported, "The tag already exists!\n")
+	} else {
+		c.String(http.StatusAccepted, "Post requested!\n")
+	}
 }
 
 // APIDeleteTag redirects the tag deletion request
 func APIDeleteTag(c *gin.Context) {
-	var json TagInString
+	var json []TagInString
 	c.BindWith(&json, binding.JSON)
-	ReqDeleteTag("delete", json)
-	c.String(http.StatusNoContent, "Delete requested!\n")
+	if res := ReqDeleteTag("delete", json); res == "error" {
+		c.String(http.StatusNoContent, "The tag doesn't exist!\n")
+	} else {
+		c.String(http.StatusAccepted, "Delete requested!\n")
+	}
 }
 
 // server mode

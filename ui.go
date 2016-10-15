@@ -21,12 +21,16 @@ type WebsockConn struct {
 }
 
 // ReqAddTag handles a tag addition request
-func ReqAddTag(ut string, req TagInString) string {
-	tag, err := buildTag([]string{req.PCBits, req.Length, req.EPCLengthBits, req.EPC, req.ReadData})
-	check(err)
+func ReqAddTag(ut string, req []TagInString) string {
+	var tags []*Tag
+	for _, t := range req {
+		tag, err := buildTag([]string{t.PCBits, t.Length, t.EPCLengthBits, t.EPC, t.ReadData})
+		check(err)
+		tags = append(tags, &tag)
+	}
 	add := &TagManager{
 		action: AddTags,
-		tags:   []*Tag{&tag}}
+		tags:   tags}
 	tagManager <- add
 	if add = <-tagManager; len(add.tags) != 0 {
 		logger.Debugf("%v, %v", ut, req)
@@ -37,12 +41,16 @@ func ReqAddTag(ut string, req TagInString) string {
 }
 
 // ReqDeleteTag handles a tag deletion request
-func ReqDeleteTag(ut string, req TagInString) string {
-	tag, err := buildTag([]string{req.PCBits, req.Length, req.EPCLengthBits, req.EPC, req.ReadData})
-	check(err)
+func ReqDeleteTag(ut string, req []TagInString) string {
+	var tags []*Tag
+	for _, t := range req {
+		tag, err := buildTag([]string{t.PCBits, t.Length, t.EPCLengthBits, t.EPC, t.ReadData})
+		check(err)
+		tags = append(tags, &tag)
+	}
 	delete := &TagManager{
 		action: DeleteTags,
-		tags:   []*Tag{&tag}}
+		tags:   tags}
 	tagManager <- delete
 	if delete = <-tagManager; len(delete.tags) != 0 {
 		logger.Debugf("%v %v", ut, req)
@@ -112,9 +120,9 @@ func SockServer(ws *websocket.Conn) {
 		// TODO: separate actions into functions
 		switch m.UpdateType {
 		case "add":
-			m.UpdateType = ReqAddTag(m.UpdateType, m.Tag)
+			m.UpdateType = ReqAddTag(m.UpdateType, []TagInString{m.Tag})
 		case "delete":
-			m.UpdateType = ReqDeleteTag(m.UpdateType, m.Tag)
+			m.UpdateType = ReqDeleteTag(m.UpdateType, []TagInString{m.Tag})
 		case "retrieve":
 			tagList := ReqRetrieveTag()
 			m = WebsocketMessage{
