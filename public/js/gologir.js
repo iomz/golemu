@@ -1,3 +1,5 @@
+var tagTile, isWaiting = false;
+
 String.prototype.hashCode = function() {
     var hash = 0;
     if (this.length == 0) return hash;
@@ -41,6 +43,7 @@ var retrieveTagList = function() {
         }
     };
     waitAndSend(JSON.stringify(retrieve_tag));
+    isWaiting = true;
 };
 
 var addTag = function(t) {
@@ -68,8 +71,22 @@ var addTag = function(t) {
         text: t.EPC
     });
     var tagString = t.EPC + t.Length + t.EPCLengthBits + t.PCBits + t.ReadData;
+    var bgColor = "bg-darkBlue";
+    switch (parseInt(t.EPCLengthBits)) {
+      case 80:
+        bgColor = "bg-teal";
+        break;
+
+      case 96:
+        bgColor = "bg-magenta";
+        break;
+
+      case 128:
+        bgColor = "bg-orange";
+        break;
+    }
     var newTile = $("<div/>", {
-        "class": "tile-wide bg-darkBlue fg-white tag-tile",
+        "class": "tile-wide fg-white tag-tile " + bgColor,
         "data-role": "tile",
         id: tagString.hashCode()
     });
@@ -101,6 +118,7 @@ var addTagFromDialog = function() {
     };
     ws.send(JSON.stringify(tagToAdd));
     hideMetroDialog("#dialog");
+    isWaiting = true;
 };
 
 var deleteTag = function(t) {
@@ -122,6 +140,7 @@ var deleteTagFromDialog = function() {
     };
     ws.send(JSON.stringify(tagToDelete));
     hideMetroDialog("#dialog");
+    isWaiting = true;
 };
 
 var updateTagFromDialog = function(t) {
@@ -203,8 +222,6 @@ $("#retrieve-tag").click(function(event) {
     retrieveTagList();
 });
 
-var tagTile;
-
 $(document).click(function(e) {
     var src = $(e.target);
     tagTile = src.parents(".tag-tile");
@@ -233,12 +250,18 @@ try {
         switch (m.UpdateType) {
           case "add":
             addTag(m.Tag);
-            notifyOnSuccess(m);
+            if (isWaiting) {
+                notifyOnSuccess(m);
+                isWaiting = false;
+            }
             break;
 
           case "delete":
             deleteTag(m.Tag);
-            notifyOnSuccess(m);
+            if (isWaiting) {
+                notifyOnSuccess(m);
+                isWaiting = false;
+            }
             break;
 
           case "retrieval":
