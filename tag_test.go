@@ -66,7 +66,7 @@ func TestBuildTagReportDataParameter(t *testing.T) {
 		tag, err := buildTag(tt.in)
 		check(err)
 		param := buildTagReportDataParameter(&tag)
-		if !bytes.IsEqual(param, tt.out) {
+		if !bytes.Equal(param, tt.out) {
 			t.Errorf("%v => %v, want %v", tt.in, param, tt.out)
 		}
 	}
