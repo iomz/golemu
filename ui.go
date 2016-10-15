@@ -22,42 +22,69 @@ type WebsockConn struct {
 
 // ReqAddTag handles a tag addition request
 func ReqAddTag(ut string, req []TagInString) string {
-	var tags []*Tag
+	// TODO: success/fail notification per tag
+	failed := false
 	for _, t := range req {
 		tag, err := buildTag([]string{t.PCBits, t.Length, t.EPCLengthBits, t.EPC, t.ReadData})
 		check(err)
-		tags = append(tags, &tag)
+
+		add := &TagManager{
+			action: AddTags,
+			tags:   []*Tag{&tag}}
+		tagManager <- add
+
+		if add = <-tagManager; len(add.tags) != 0 {
+			m := WebsocketMessage{
+				UpdateType: "add",
+				Tag:        t,
+				Tags:       []map[string]interface{}{}}
+			clientMessage, err := json.Marshal(m)
+			check(err)
+			Broadcast(clientMessage)
+		} else {
+			failed = true
+		}
 	}
-	add := &TagManager{
-		action: AddTags,
-		tags:   tags}
-	tagManager <- add
-	if add = <-tagManager; len(add.tags) != 0 {
-		logger.Debugf("%v, %v", ut, req)
-		return ut
+
+	if failed {
+		logger.Errorf("failed %v %v", ut, req)
+		return "error"
 	}
-	logger.Errorf("failed %v, %v", ut, req)
-	return "error"
+	logger.Debugf("%v %v", ut, req)
+	return ut
 }
 
 // ReqDeleteTag handles a tag deletion request
 func ReqDeleteTag(ut string, req []TagInString) string {
-	var tags []*Tag
+	// TODO: success/fail notification per tag
+	failed := false
 	for _, t := range req {
 		tag, err := buildTag([]string{t.PCBits, t.Length, t.EPCLengthBits, t.EPC, t.ReadData})
 		check(err)
-		tags = append(tags, &tag)
+
+		delete := &TagManager{
+			action: DeleteTags,
+			tags:   []*Tag{&tag}}
+		tagManager <- delete
+
+		if delete = <-tagManager; len(delete.tags) != 0 {
+			m := WebsocketMessage{
+				UpdateType: "delete",
+				Tag:        t,
+				Tags:       []map[string]interface{}{}}
+			clientMessage, err := json.Marshal(m)
+			check(err)
+			Broadcast(clientMessage)
+		} else {
+			failed = true
+		}
 	}
-	delete := &TagManager{
-		action: DeleteTags,
-		tags:   tags}
-	tagManager <- delete
-	if delete = <-tagManager; len(delete.tags) != 0 {
-		logger.Debugf("%v %v", ut, req)
-		return ut
+	if failed {
+		logger.Errorf("failed %v %v", ut, req)
+		return "error"
 	}
-	logger.Errorf("failed %v %v", ut, req)
-	return "error"
+	logger.Debugf("%v %v", ut, req)
+	return ut
 }
 
 // ReqRetrieveTag handles a tag retrieval request
@@ -73,6 +100,16 @@ func ReqRetrieveTag() []map[string]interface{} {
 		tagList = append(tagList, t)
 	}
 	return tagList
+}
+
+// Broadcast a message vi websocket
+func Broadcast(clientMessage []byte) {
+	for cs := range activeClients {
+		if err := websocket.Message.Send(cs.websocket, string(clientMessage)); err != nil {
+			// we could not send the message to a peer
+			logger.Warningf("Could not send message to ", cs.clientIP, err.Error())
+		}
+	}
 }
 
 // SockServer to handle messaging between clients
@@ -135,11 +172,6 @@ func SockServer(ws *websocket.Conn) {
 
 		clientMessage, err = json.Marshal(m)
 		check(err)
-		for cs := range activeClients {
-			if err = websocket.Message.Send(cs.websocket, string(clientMessage)); err != nil {
-				// we could not send the message to a peer
-				logger.Warningf("Could not send message to ", cs.clientIP, err.Error())
-			}
-		}
+		Broadcast(clientMessage)
 	}
 }
