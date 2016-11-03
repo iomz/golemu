@@ -8,11 +8,12 @@
     <meta name="keywords" content="">
     <meta name="author" content="">
     <link rel='shortcut icon' type='image/x-icon' href='../favicon.ico' />
-    <title>gologir</title>
-    <link rel="stylesheet" href="/style.css" type="text/css">
+    <title>RFID Reader Emulator | Tag Population Management Console</title>
     <link rel="stylesheet" href="/vendor/metro/build/css/metro.min.css" type="text/css">
     <link rel="stylesheet" href="/vendor/metro/build/css/metro-icons.min.css" type="text/css">
     <link rel="stylesheet" href="/vendor/metro/build/css/metro-colors.min.css" type="text/css">
+    <link rel="stylesheet" href="/vendor/metro/build/css/metro-schemes.min.css" type="text/css">
+    <link rel="stylesheet" href="/style.css" type="text/css">
 
     <script src="/vendor/jquery/dist/jquery.min.js"></script>
     <script src="/vendor/metro/build/js/metro.js"></script>
@@ -23,6 +24,7 @@
         <hr class="thin"/>
         <br />
         <div class="schemeButtons">
+            <div class="button square-button tile-area-scheme-white" data-scheme="white"></div>
             <div class="button square-button tile-area-scheme-dark" data-scheme="dark"></div>
             <div class="button square-button tile-area-scheme-darkBrown" data-scheme="darkBrown"></div>
             <div class="button square-button tile-area-scheme-darkCrimson" data-scheme="darkCrimson"></div>
@@ -47,13 +49,20 @@
         </div>
     </div>
 
-    <div class="tile-area tile-area-scheme-dark fg-white" style="height: 100%; max-height: 100% !important; overflow-y: scroll !important;">
-        <h1 class="tile-area-title">gologir</h1>
-        <div class="tile-area-controls">
+    <div class="app-bar darcula" data-role="appbar">
+        <a class="app-bar-element branding">RFID Reader Emulator</a>
+        <span class="app-bar-divider"></span>
+        <ul class="app-bar-menu">
+            <li><a href="/">Tag Population Management Console</a></li>
+            <li><a onclick="showDialog('#help')">Help</a></li>
+        </ul>
+        <div class="app-bar-element place-right">
             <button class="square-button bg-transparent fg-white bg-grayDark bg-hover-dark no-border" onclick="showCharms('#charmSettings')"><span class="mif-cog"></span></button>
             <a href="/" class="square-button bg-transparent fg-white bg-grayDark bg-hover-dark no-border"><span class="mif-switch"></span></a>
         </div>
+    </div>
 
+    <div class="tag-area tile-area fg-white tile-area-scheme-white" style="height: 100%; max-height: 100% !important; overflow-y: scroll !important;">
         <div id="tag-cloud" class="tile-group">
             <div id="add-tile" class="tile bg-green fg-white" data-role="tile">
                 <div class="tile-content iconic">
@@ -121,6 +130,33 @@
             </div>
         </form>
     </div>
+
+    <div class="padding20 dialog" data-role="dialog" id="help" data-close-button="true">
+        <h1 class="text-light">Help</h1>
+        REST API endpoint: <a href="http://localhost:8080/api/v1/tags">http://localhost:8080/api/v1/tags</a>
+        <br />
+        Perform POST/DELETE requests to manage the tag populaton.
+        <br />
+        See more at <a href="https://github.com/iomz/gologir">here</a>.
+        <br />
+        <br />
+        Colors for tags are based on the UII (EPC) length:
+        <br />
+        <br />
+        <div class="button square-button bg-teal"></div>
+        80 bits
+        <br />
+        <div class="button square-button bg-magenta"></div>
+        96 bits
+        <br />
+        <div class="button square-button bg-orange"></div>
+        128 bits
+        <br />
+        <br />
+        <br />
+        <button type="button" class="button" onclick="hideMetroDialog('#help')">Dismiss</button>
+    </div>
+
 </body>
 <script src="/js/metro-tile.js"></script>
 <script src="/js/gologir.js"></script>
