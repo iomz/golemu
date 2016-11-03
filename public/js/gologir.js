@@ -154,6 +154,9 @@ var editTag = function(t) {
     $("#Length").val(t.Length);
     $("#EPCLengthBits").val(t.EPCLengthBits);
     $("#ReadData").val(t.ReadData);
+    $("#rand-epc-btn").show();
+    $("#rand-iso-btn").show();
+    $("#rand-prop-btn").show();
     $("#add-btn").hide();
     $("#update-btn").show();
     $("#delete-btn").show();
@@ -200,6 +203,9 @@ $("#add-tile").click(function(event) {
     $("#Length").val("");
     $("#EPCLengthBits").val("");
     $("#ReadData").val("");
+    $("#rand-epc-btn").show();
+    $("#rand-iso-btn").show();
+    $("#rand-prop-btn").show();
     $("#add-btn").show();
     $("#update-btn").hide();
     $("#delete-btn").hide();
@@ -212,6 +218,9 @@ $("#delete-tile").click(function(event) {
     $("#Length").val("");
     $("#EPCLengthBits").val("");
     $("#ReadData").val("");
+    $("#rand-epc-btn").hide();
+    $("#rand-iso-btn").hide();
+    $("#rand-prop-btn").hide();
     $("#add-btn").hide();
     $("#update-btn").hide();
     $("#delete-btn").show();
