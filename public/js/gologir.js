@@ -154,6 +154,9 @@ var editTag = function(t) {
     $("#Length").val(t.Length);
     $("#EPCLengthBits").val(t.EPCLengthBits);
     $("#ReadData").val(t.ReadData);
+    $("#rand-epc-btn").show();
+    $("#rand-iso-btn").show();
+    $("#rand-prop-btn").show();
     $("#add-btn").hide();
     $("#update-btn").show();
     $("#delete-btn").show();
@@ -165,7 +168,7 @@ var showDialog = function(id) {
     dialog.open();
 };
 
-function notifyOnSuccess(m) {
+var notifyOnSuccess = function(m) {
     var action = "";
     switch (m.UpdateType) {
       case "add":
@@ -186,12 +189,68 @@ function notifyOnSuccess(m) {
     });
 }
 
-function notifyOnError() {
+var notifyOnError = function() {
     $.Notify({
         caption: "Error",
         content: "Something went wrong",
         type: "alert"
     });
+}
+
+var makeRandomHexString = function(n) {
+    // Ensure the resulting string has at least the length of 1
+    if (n != parseInt(n, 10) || n <= 0) {
+        n = 1;
+    }
+
+    var str = "";
+    var c = "1234567890abcdef";
+
+    for (var i = 0; i < n; i++) {
+        str += c.charAt(Math.floor(Math.random() * c.length));
+    }
+
+    return str;
+}
+
+var randomFillDialog = function(code) {
+    var epc, pcBits, length, epcLengthBits, readData;
+    switch (code) {
+        case "epc":
+            epc = "302db319a000" + makeRandomHexString(12);
+            pcBits = "3000";
+            length = "18";
+            epcLengthBits = "96";
+            readData = makeRandomHexString(4);
+            break;
+
+        case "iso":
+            var isos = [{epcPrefix: "dc20420c4c36", pcBits: "29a9", length: "16", epcLengthBits: "80"},{epcPrefix: "c4a301c70d36cb32920b1dc1", pcBits: "41a2", length: "22", epcLengthBits: "128"}];
+            var choice = Math.floor(Math.random() * isos.length);
+
+            epc = isos[choice]["epcPrefix"] + makeRandomHexString(8);
+            pcBits = isos[choice]["pcBits"];
+            length = isos[choice]["length"];
+            epcLengthBits = isos[choice]["epcLengthBits"];
+            readData = makeRandomHexString(4);
+            break;
+
+        case "proprietary":
+            var props = [{words: 32, pcBits: "4000", length: "22", epcLengthBits: "128"},{words: 24, pcBits: "3000", length: "18", epcLengthBits: "96"}];
+            var choice = Math.floor(Math.random() * props.length);
+
+            epc = makeRandomHexString(props[choice]["words"]);
+            pcBits = props[choice]["pcBits"];
+            length = props[choice]["length"];
+            epcLengthBits = props[choice]["epcLengthBits"];
+            readData = makeRandomHexString(4);
+            break;
+    }
+    $("#EPC").val(epc);
+    $("#PCBits").val(pcBits);
+    $("#Length").val(length);
+    $("#EPCLengthBits").val(epcLengthBits);
+    $("#ReadData").val(readData);
 }
 
 $("#add-tile").click(function(event) {
@@ -200,6 +259,9 @@ $("#add-tile").click(function(event) {
     $("#Length").val("");
     $("#EPCLengthBits").val("");
     $("#ReadData").val("");
+    $("#rand-epc-btn").show();
+    $("#rand-iso-btn").show();
+    $("#rand-prop-btn").show();
     $("#add-btn").show();
     $("#update-btn").hide();
     $("#delete-btn").hide();
@@ -212,6 +274,9 @@ $("#delete-tile").click(function(event) {
     $("#Length").val("");
     $("#EPCLengthBits").val("");
     $("#ReadData").val("");
+    $("#rand-epc-btn").hide();
+    $("#rand-iso-btn").hide();
+    $("#rand-prop-btn").hide();
     $("#add-btn").hide();
     $("#update-btn").hide();
     $("#delete-btn").show();
