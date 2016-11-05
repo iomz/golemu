@@ -160,6 +160,7 @@ var editTag = function(t) {
     $("#add-btn").hide();
     $("#update-btn").show();
     $("#delete-btn").show();
+    $("#dialog > form > h1").text("Edit Tag");
     showDialog("#dialog");
 };
 
@@ -265,6 +266,7 @@ $("#add-tile").click(function(event) {
     $("#add-btn").show();
     $("#update-btn").hide();
     $("#delete-btn").hide();
+    $("#dialog > form > h1").text("Add Tag");
     showDialog("#dialog");
 });
 
@@ -280,6 +282,7 @@ $("#delete-tile").click(function(event) {
     $("#add-btn").hide();
     $("#update-btn").hide();
     $("#delete-btn").show();
+    $("#dialog > form > h1").text("Delete Tag");
     showDialog("#dialog");
 });
 
