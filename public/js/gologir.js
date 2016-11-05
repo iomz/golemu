@@ -312,6 +312,7 @@ try {
     };
     ws.onmessage = function(m) {
         var m = JSON.parse(m.data);
+        console.log(m);
         switch (m.UpdateType) {
           case "add":
             addTag(m.Tag);
@@ -330,6 +331,9 @@ try {
             break;
 
           case "retrieval":
+            if (m.Tags == null) {
+                break;
+            }
             for (var i = 0; i < m.Tags.length; i++) {
                 addTag(m.Tags[i]);
             }

@@ -172,6 +172,6 @@ func SockServer(ws *websocket.Conn) {
 
 		clientMessage, err = json.Marshal(m)
 		check(err)
-		Broadcast(clientMessage)
+		//Broadcast(clientMessage)
 	}
 }
