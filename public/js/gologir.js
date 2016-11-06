@@ -143,9 +143,39 @@ var deleteTagFromDialog = function() {
     isWaiting = true;
 };
 
-var updateTagFromDialog = function(t) {
+var updateTagFromDialog = function() {
+    var targetTagId = $("#tag-selected").val();
+    console.log(targetTagId);
+    var targetTagTile = $("#"+targetTagId);
+    var epc = targetTagTile.children(".tile-label").text();
+    var info = $("h2", targetTagTile).text().split("/");
+
+    var tagToDelete = {
+        UpdateType: "delete",
+        Tag: {
+            PCBits: info[2],
+            Length: info[0],
+            EPCLengthBits: info[1],
+            EPC: epc,
+            ReadData: info[3]
+        },
+        Tags: null
+    };
+    ws.send(JSON.stringify(tagToDelete));
+
+    var tagToAdd = {
+        UpdateType: "add",
+        Tag: {
+            PCBits: $("#PCBits").val(),
+            Length: $("#Length").val(),
+            EPCLengthBits: $("#EPCLengthBits").val(),
+            EPC: $("#EPC").val(),
+            ReadData: $("#ReadData").val()
+        },
+        Tags: null
+    };
+    ws.send(JSON.stringify(tagToAdd));
     hideMetroDialog("#dialog");
-    notifyOnError();
 };
 
 var editTag = function(t) {
@@ -161,6 +191,7 @@ var editTag = function(t) {
     $("#update-btn").show();
     $("#delete-btn").show();
     $("#dialog > form > h1").text("Edit Tag");
+    $("#tag-selected").val(t.id);
     showDialog("#dialog");
 };
 
@@ -301,7 +332,8 @@ $(document).click(function(e) {
             Length: info[0],
             EPCLengthBits: info[1],
             EPC: epc,
-            ReadData: info[3]
+            ReadData: info[3],
+            id: tagTile.attr("id")
         });
     }
 });
@@ -334,9 +366,6 @@ try {
             break;
 
           case "retrieval":
-            if (m.Tags == null) {
-                break;
-            }
             for (var i = 0; i < m.Tags.length; i++) {
                 addTag(m.Tags[i]);
             }

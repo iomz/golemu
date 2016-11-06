@@ -99,6 +99,7 @@ func ReqRetrieveTag() []map[string]interface{} {
 		t := structs.Map(tag.InString())
 		tagList = append(tagList, t)
 	}
+	logger.Debugf("retrieve: %v", tagList)
 	return tagList
 }
 
@@ -166,12 +167,11 @@ func SockServer(ws *websocket.Conn) {
 				UpdateType: "retrieval",
 				Tag:        TagInString{},
 				Tags:       tagList}
+			clientMessage, err = json.Marshal(m)
+			check(err)
+			Broadcast(clientMessage)
 		default:
 			logger.Warningf("Unknown UpdateType: %v", m.UpdateType)
 		}
-
-		clientMessage, err = json.Marshal(m)
-		check(err)
-		//Broadcast(clientMessage)
 	}
 }

@@ -2,6 +2,10 @@ h1 {
 	text-align: center;
 }
 
+#selected-tag {
+    visibility: hidden;
+}
+
 #help {
     width: auto;
     height: auto;
