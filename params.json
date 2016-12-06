@@ -1,0 +1,6 @@
+{
+  "name": "Gologir",
+  "tagline": "A mock LLRP-based RFID reader for RFID information system testing",
+  "body": "### About\r\n`Gologir` is a sample implementation of an RFID emulator for practitioners/researchers of RFID-based automatic identification systems. The emulator significantly mitigates the RFID information system testing process and encourages more in performance evaluation by completely eliminating the physical tags placement and reading with physical interrogator.\r\n\r\n### Features\r\n* Generate \"Multicode\" (ISO, GS 1 and even proprietary) RFID tag events\r\n* Dynamic tag population control simulating moving tags through web interfaces (Websocket/REST)\r\n* Communicate with a middleware via Low Level Reader Protocol (LLRP)\r\n\r\n# Synopsis\r\n`\r\n% go get github.com/iomz/gologir\r\n% gologir --help\r\n`\r\n\r\n### Support or Contact\r\nAlso check out my tiny LLRP library for Go: [iomz/go-llrp](https://github.com/iomz/go-llrp)\r\n",
+  "note": "Don't delete this file! It's used internally to help with page regeneration."
+}
