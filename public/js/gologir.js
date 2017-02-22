@@ -11,6 +11,49 @@ String.prototype.hashCode = function() {
     return hash;
 };
 
+// converts binary string to a hexadecimal string
+// returns an object with key 'valid' to a boolean value, indicating
+// if the string is a valid binary string.
+// If 'valid' is true, the converted hex string can be obtained by
+// the 'result' key of the returned object
+function binaryToHex(s) {
+    var i, k, part, accum, ret = '';
+    for (i = s.length-1; i >= 3; i -= 4) {
+        // extract out in substrings of 4 and convert to hex
+        part = s.substr(i+1-4, 4);
+        accum = 0;
+        for (k = 0; k < 4; k += 1) {
+            if (part[k] !== '0' && part[k] !== '1') {
+                // invalid character
+                return { valid: false };
+            }
+            // compute the length 4 substring
+            accum = accum * 2 + parseInt(part[k], 10);
+        }
+        if (accum >= 10) {
+            // 'A' to 'F'
+            ret = String.fromCharCode(accum - 10 + 'A'.charCodeAt(0)) + ret;
+        } else {
+            // '0' to '9'
+            ret = String(accum) + ret;
+        }
+    }
+    // remaining characters, i = 0, 1, or 2
+    if (i >= 0) {
+        accum = 0;
+        // convert from front
+        for (k = 0; k <= i; k += 1) {
+            if (s[k] !== '0' && s[k] !== '1') {
+                return { valid: false };
+            }
+            accum = accum * 2 + parseInt(s[k], 10);
+        }
+        // 3 bits, value cannot exceed 2^3 - 1 = 7, just convert
+        ret = String(accum) + ret;
+    }
+    return { valid: true, result: ret };
+}
+
 var waitAndSend = function(message, callback) {
     waitForConnection(function() {
         ws.send(message);
@@ -227,7 +270,19 @@ var notifyOnError = function() {
         content: "Something went wrong",
         type: "alert"
     });
-}
+};
+
+var makeRandomHexEPCPrefix = function() {
+    // First 14bits
+    var header = "00110000001101";
+    var prefix_list = [
+        "11011001111110010001110010011", // Lab01
+        "11011010110110010111001010100", // Lab02
+        "11011001100011001101000000000", // Daiwa
+        "10010110100010101010001000000"  // Masuizumi
+    ];
+    return binaryToHex(header+prefix_list[Math.floor(Math.random() * prefix_list.length)]);
+};
 
 var makeRandomHexString = function(n) {
     // Ensure the resulting string has at least the length of 1
@@ -249,7 +304,8 @@ var randomFillDialog = function(code) {
     var epc, pcBits, length, epcLengthBits, readData;
     switch (code) {
         case "epc":
-            epc = "302db319a000" + makeRandomHexString(12);
+            //epc = "302db319a000" + makeRandomHexString(12);
+            epc = makeRandomHexEPCPrefix() + makeRandomHexString(13);
             pcBits = "3000";
             length = "18";
             epcLengthBits = "96";
