@@ -17,7 +17,7 @@ Install & Synopsis
 --
 
 ```
-$ go install
+$ go get github.com/iomz/gologir
 $ gologir --help
 
 usage: gologir [<flags>] <command> [<args> ...]
