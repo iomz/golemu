@@ -273,15 +273,17 @@ var notifyOnError = function() {
 };
 
 var makeRandomHexEPCPrefix = function() {
-    // First 14bits
-    var header = "00110000001101";
+    // First 14bits: Header, Filter, Partition
+    var header = "00110000"+"001"+"101";
     var prefix_list = [
-        "11011001111110010001110010011", // Lab01
+        "11011001111110010001110010011", // Lab01, Company Prefix
         "11011010110110010111001010100", // Lab02
         "11011001100011001101000000000", // Daiwa
         "10010110100010101010001000000"  // Masuizumi
     ];
-    return binaryToHex(header+prefix_list[Math.floor(Math.random() * prefix_list.length)]);
+    var hexObj = binaryToHex(header+prefix_list[Math.floor(Math.random() * prefix_list.length)]);
+    console.log(hexObj);
+    return hexObj.result;
 };
 
 var makeRandomHexString = function(n) {
