@@ -93,7 +93,7 @@ func buildTag(record []string) (Tag, error) {
 	pc := uint16(pc64)
 	len64, err := strconv.ParseUint(record[1], 10, 16)
 	check(err)
-	len := uint16(len64)
+	length := uint16(len64)
 	epclen64, err := strconv.ParseUint(record[2], 10, 16)
 	check(err)
 	epclen := uint16(epclen64)
@@ -102,7 +102,7 @@ func buildTag(record []string) (Tag, error) {
 	readData, err := hex.DecodeString(record[4])
 	check(err)
 
-	tag := Tag{pc, len, epclen, epc, readData}
+	tag := Tag{pc, length, epclen, epc, readData}
 	return tag, nil
 }
 
