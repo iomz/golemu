@@ -28,12 +28,15 @@ var (
 
 	// kingpin generate ISO UII mode
 	iso = app.Command("iso", "Generate an ISO UII.")
+	// ISO scheme
+	isoScheme = iso.Flag("scheme", "Scheme for ISO UII.").Short('s').Default("17367").String()
 
 	//hexRunes to hold hex chars
 	hexRunes = []rune("abcdef0123456789")
 )
 
 
+// Check if string exists in a string slice
 func stringInSlice(a string, list []string) bool {
     for _, b := range list {
         if b == a {
@@ -52,11 +55,13 @@ func Pack(data []interface{}) []byte {
 	return buf.Bytes()
 }
 
+// Return random int value with max
 func randomInt(min, max int) int {
 	rand.Seed(time.Now().UTC().UnixNano())
 	return rand.Intn(max-min) + min
 }
 
+// Return random hex rune for n length
 func RandomHexRunes(n int) string {
 	b := make([]rune, n)
 	rand.Seed(time.Now().UTC().UnixNano())
@@ -66,29 +71,37 @@ func RandomHexRunes(n int) string {
 	return string(b)
 }
 
-func GenerateNLengthBinaryString(n int, max int) ([]rune, int) {
+//
+func GenerateNLengthZeroBinaryString(n int) []rune {
 	binstr := make([]rune, n)
-	var sum int
+
+	for i := 0; i < n; i++ {
+		binstr[i] = '0'
+	}
+
+	return binstr
+}
+
+// max == 0 for no cap limit
+func GenerateNLengthBinaryString(n int, max uint) ([]rune, uint) {
+	binstr := make([]rune, n)
+	var sum uint
 	rand.Seed(time.Now().UTC().UnixNano())
 
 	for i := 0; i < n; i++ {
 		var b rune
-		if max == 0 {
-			b = '0'
-		} else if rand.Intn(2) == 0 {
+		if rand.Intn(2) == 0 {
 			b = '0'
 		} else {
 			b = '1'
 		}
 		binstr[i] = b
 		if b == '1' {
-			sum += int(math.Pow(float64(2), float64(n - i - 1)))
+			sum += uint(math.Pow(float64(2), float64(n - i - 1)))
 		}
 	}
 
-	//fmt.Println("sum: ", sum)
-
-	if max != 0 && max < sum {
+	if max != uint(0) && max < sum {
 		binstr, sum = GenerateNLengthBinaryString(n, max)
 	}
 
@@ -143,9 +156,9 @@ func GenerateRandomSGTIN96() ([]byte, error) {
 		cpSizes = []int{20, 6}
 	}
 
-	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], int(math.Pow(float64(10), float64(cpSizes[1]))))
-	itemReference, _ := GenerateNLengthBinaryString(44-cpSizes[0], int(math.Pow(float64(10), float64(13-cpSizes[1]))))
-	serial, _ := GenerateNLengthBinaryString(38, int(math.Pow(float64(2), float64(38))))
+	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], uint(math.Pow(float64(10), float64(cpSizes[1]))))
+	itemReference, _ := GenerateNLengthBinaryString(44-cpSizes[0], uint(math.Pow(float64(10), float64(13-cpSizes[1]))))
+	serial, _ := GenerateNLengthBinaryString(38, uint(math.Pow(float64(2), float64(38))))
 
 	bs := append(filter, partition...)
 	bs = append(bs, companyPrefix...)
@@ -207,12 +220,11 @@ func GenerateRandomSSCC96() ([]byte, error) {
 		cpSizes = []int{20, 6}
 	}
 
-	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], int(math.Pow(float64(10), float64(cpSizes[1]))))
-	extension, _ := GenerateNLengthBinaryString(58-cpSizes[0], int(math.Pow(float64(10), float64(17-cpSizes[1]))))
+	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], uint(math.Pow(float64(10), float64(cpSizes[1]))))
+	extension, _ := GenerateNLengthBinaryString(58-cpSizes[0], uint(math.Pow(float64(10), float64(17-cpSizes[1]))))
 
 	// 24 '0's
-	//reserved := []rune{'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'}
-	reserved, _ := GenerateNLengthBinaryString(24, 0)
+	reserved  := GenerateNLengthZeroBinaryString(24)
 
 	bs := append(filter, partition...)
 	bs = append(bs, companyPrefix...)
@@ -274,9 +286,9 @@ func GenerateRandomGRAI96() ([]byte, error) {
 		cpSizes = []int{20, 6}
 	}
 
-	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], int(math.Pow(float64(10), float64(cpSizes[1]))))
-	assetType, _ := GenerateNLengthBinaryString(44-cpSizes[0], int(math.Pow(float64(10), float64(12-cpSizes[1]))))
-	serial, _ := GenerateNLengthBinaryString(38, int(math.Pow(float64(2), float64(38))))
+	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], uint(math.Pow(float64(10), float64(cpSizes[1]))))
+	assetType, _ := GenerateNLengthBinaryString(44-cpSizes[0], uint(math.Pow(float64(10), float64(12-cpSizes[1]))))
+	serial, _ := GenerateNLengthBinaryString(38, 0)
 
 	bs := append(filter, partition...)
 	bs = append(bs, companyPrefix...)
@@ -338,8 +350,9 @@ func GenerateRandomGIAI96() ([]byte, error) {
 		cpSizes = []int{20, 6}
 	}
 
-	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], int(math.Pow(float64(10), float64(cpSizes[1]))))
-	indivisualAssetReference, _ := GenerateNLengthBinaryString(82-cpSizes[0], int(math.Pow(float64(10), float64(25-cpSizes[1]))))
+	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], uint(math.Pow(float64(10), float64(cpSizes[1]))))
+	// TODO: cap overflow
+	indivisualAssetReference, _ := GenerateNLengthBinaryString(82-cpSizes[0], uint(math.Pow(float64(10), float64(25-cpSizes[1]))))
 
 	bs := append(filter, partition...)
 	bs = append(bs, companyPrefix...)
@@ -376,32 +389,26 @@ func GenerateRandomGIAI96() ([]byte, error) {
 	return Pack(giai96), nil
 }
 
-func GenerateRandomEPCData(std string) ([]byte, error) {
-	var epcData []byte
-
-	switch std {
-		case "SGTIN-96":
-			epcData, _ = GenerateRandomSGTIN96()
-		case "SSCC-96":
-			epcData, _ = GenerateRandomSSCC96()
-		case "GRAI-96":
-			epcData, _ = GenerateRandomGRAI96()
-		case "GIAI-96":
-			epcData, _ = GenerateRandomGIAI96()
-	}
-
-	return epcData, nil
-}
-
+//
 func GenerateEPC() string {
 	epcs := []string{"SGTIN-96", "SSCC-96", "GRAI-96", "GIAI-96"}
 
 	if !stringInSlice(strings.ToUpper(*epcScheme), epcs) {
 		os.Exit(1)
 	}
-	fmt.Println(strings.ToUpper(*epcScheme))
 
-	uii, _ := GenerateRandomEPCData(strings.ToUpper(*epcScheme))
+	var uii []byte
+	switch strings.ToUpper(*epcScheme) {
+		case "SGTIN-96":
+			uii, _ = GenerateRandomSGTIN96()
+		case "SSCC-96":
+			uii, _ = GenerateRandomSSCC96()
+		case "GRAI-96":
+			uii, _ = GenerateRandomGRAI96()
+		case "GIAI-96":
+			uii, _ = GenerateRandomGIAI96()
+	}
+
 	rd, _ := hex.DecodeString(RandomHexRunes(4))
 
 	// TODO: update pc when length changed (for non-96-bit codes)
@@ -420,15 +427,29 @@ func GenerateEPC() string {
 		hex.EncodeToString(rd)
 }
 
+// Generate a random 17367 code
+func GenerateRandom17367() []byte {
+	return []byte{}
+}
+
+//
 func GenerateISO() string {
 	var uii []byte
 	var pc []byte
 	var length uint16
 	var epclen uint16
 
-	isos := []uint16{17365, 17363}
-	i := randomInt(0, len(isos))
+	isos := []string{"17365", "17363"}
 
+	if !stringInSlice(*isoScheme, isos) {
+		os.Exit(1)
+	}
+
+	switch *isoScheme {
+	case "17367":
+		uii = GenerateRandom17367()
+	}
+/*
 	if isos[i] == 17365 {
 		// ISO 17365
 		uii, _ = hex.DecodeString("c4a301c70d36cb32920b1d" + RandomHexRunes(10))
@@ -452,6 +473,7 @@ func GenerateISO() string {
 		length = uint16(16)
 		epclen = uint16(80)
 	}
+*/
 	rd, _ := hex.DecodeString(RandomHexRunes(4))
 
 	return hex.EncodeToString(pc) + "," +
