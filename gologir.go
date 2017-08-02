@@ -73,6 +73,8 @@ var (
 	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
 	// kingpin tag list file
 	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
+	// kingpin web port
+	webPort = server.Flag("webPort", "Port listening for web access.").Short('w').Default("3000").Int()
 
 	// kingpin client command
 	client = app.Command("client", "Run as a client mode.")
@@ -254,7 +256,7 @@ func runServer() int {
 		v1 := r.Group("api/v1")
 		v1.POST("/tags", APIPostTag)
 		v1.DELETE("/tags", APIDeleteTag)
-		r.Run(":8080")
+		r.Run(":"+strconv.Itoa(*webPort))
 	}()
 
 	go func() {
