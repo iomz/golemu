@@ -330,30 +330,9 @@ func GenerateRandomSSCC96(cp string, fv string) ([]byte, error) {
 }
 
 // GRAI-96
-func GenerateRandomGRAI96() ([]byte, error) {
-	filter, _ := GenerateNLengthBinaryString(3, 7)
-	partition, pValue := GenerateNLengthBinaryString(3, 6)
-
-	// SGTIN Partition Table
-	cpSizes := make([]int, 2)
-	switch pValue {
-	case 0:
-		cpSizes = []int{40, 12}
-	case 1:
-		cpSizes = []int{37, 11}
-	case 2:
-		cpSizes = []int{34, 10}
-	case 3:
-		cpSizes = []int{30, 9}
-	case 4:
-		cpSizes = []int{27, 8}
-	case 5:
-		cpSizes = []int{24, 7}
-	case 6:
-		cpSizes = []int{20, 6}
-	}
-
-	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], uint(math.Pow(float64(10), float64(cpSizes[1]))))
+func GenerateRandomGRAI96(cp string, fv string) ([]byte, error) {
+	filter := GetFilterValue(fv)
+	partition, companyPrefix, cpSizes := GetPartitionAndCompanyPrefix(cp)
 	assetType, _ := GenerateNLengthBinaryString(44-cpSizes[0], uint(math.Pow(float64(10), float64(12-cpSizes[1]))))
 	serial, _ := GenerateNLengthBinaryString(38, 0)
 
@@ -394,30 +373,9 @@ func GenerateRandomGRAI96() ([]byte, error) {
 }
 
 // GIAI-96
-func GenerateRandomGIAI96() ([]byte, error) {
-	filter, _ := GenerateNLengthBinaryString(3, 7)
-	partition, pValue := GenerateNLengthBinaryString(3, 6)
-
-	// SGTIN Partition Table
-	cpSizes := make([]int, 2)
-	switch pValue {
-	case 0:
-		cpSizes = []int{40, 12}
-	case 1:
-		cpSizes = []int{37, 11}
-	case 2:
-		cpSizes = []int{34, 10}
-	case 3:
-		cpSizes = []int{30, 9}
-	case 4:
-		cpSizes = []int{27, 8}
-	case 5:
-		cpSizes = []int{24, 7}
-	case 6:
-		cpSizes = []int{20, 6}
-	}
-
-	companyPrefix, _ := GenerateNLengthBinaryString(cpSizes[0], uint(math.Pow(float64(10), float64(cpSizes[1]))))
+func GenerateRandomGIAI96(cp string, fv string) ([]byte, error) {
+	filter := GetFilterValue(fv)
+	partition, companyPrefix, cpSizes := GetPartitionAndCompanyPrefix(cp)
 	// TODO: cap overflow
 	indivisualAssetReference, _ := GenerateNLengthBinaryString(82-cpSizes[0], uint(math.Pow(float64(10), float64(25-cpSizes[1]))))
 
@@ -439,7 +397,7 @@ func GenerateRandomGIAI96() ([]byte, error) {
 	}
 
 	var giai96 = []interface{}{
-		uint8(51), // GRAI-96 Header 0011 0011
+		uint8(52), // GIAI-96 Header 0011 0100
 		p[0],      // 8 bits -> 16 bits
 		p[1],      // 8 bits -> 24 bits
 		p[2],      // 8 bits -> 32 bits
@@ -471,9 +429,9 @@ func GenerateEPC() string {
 	case "SSCC-96":
 		uii, _ = GenerateRandomSSCC96(*epcCompanyPrefix, *epcFilterValue)
 	case "GRAI-96":
-		uii, _ = GenerateRandomGRAI96()
+		uii, _ = GenerateRandomGRAI96(*epcCompanyPrefix, *epcFilterValue)
 	case "GIAI-96":
-		uii, _ = GenerateRandomGIAI96()
+		uii, _ = GenerateRandomGIAI96(*epcCompanyPrefix, *epcFilterValue)
 	}
 
 	// TODO: update pc when length changed (for non-96-bit codes)
