@@ -53,7 +53,7 @@ var (
 	version = "0.1.0"
 
 	// kingpin app
-	app = kingpin.New("gologir", "A mock LLRP-based logical reader for RFID Tags.")
+	app = kingpin.New("golemu", "A mock LLRP-based logical reader emulator for RFID Tags.")
 	// kingpin debug mode flag
 	debug = app.Flag("debug", "Enable debug mode.").Short('v').Default("false").Bool()
 	// kingpin initial MessageID

@@ -1,10 +1,10 @@
-gologir
+golemu
 ==
 
-[![Build Status](https://travis-ci.org/iomz/gologir.svg?branch=master)](https://travis-ci.org/iomz/gologir)
-[![Coverage Status](https://coveralls.io/repos/iomz/gologir/badge.svg?branch=master)](https://coveralls.io/github/iomz/gologir?branch=master)
-[![Go Report Card](https://goreportcard.com/badge/github.com/iomz/gologir)](https://goreportcard.com/report/github.com/iomz/gologir)
-[![GoDoc](https://godoc.org/github.com/iomz/gologir?status.svg)](http://godoc.org/github.com/iomz/gologir)
+[![Build Status](https://travis-ci.org/iomz/golemu.svg?branch=master)](https://travis-ci.org/iomz/golemu)
+[![Coverage Status](https://coveralls.io/repos/iomz/golemu/badge.svg?branch=master)](https://coveralls.io/github/iomz/golemu?branch=master)
+[![Go Report Card](https://goreportcard.com/badge/github.com/iomz/golemu)](https://goreportcard.com/report/github.com/iomz/golemu)
+[![GoDoc](https://godoc.org/github.com/iomz/golemu?status.svg)](http://godoc.org/github.com/iomz/golemu)
 
 A simple LLRP-based logical reader mock for RFID Tags using [go-llrp](https://github.com/iomz/go-llrp).
 
@@ -17,10 +17,10 @@ Install & Synopsis
 --
 
 ```
-$ go get github.com/iomz/gologir
-$ gologir --help
+$ go get github.com/iomz/golemu
+$ golemu --help
 
-usage: gologir [<flags>] <command> [<args> ...]
+usage: golemu [<flags>] <command> [<args> ...]
 
 A mock LLRP-based logical reader for RFID Tags.
 
@@ -48,7 +48,7 @@ Commands:
 Run as a server, listen 5084 port for LLRP incoming connection, 8080 port for websocket UI
 
 ```
-$ gologir server
+$ golemu server
 Access http://localhost:8080 for Web GUI
 ```
 

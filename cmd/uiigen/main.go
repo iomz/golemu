@@ -25,10 +25,11 @@ var (
 	// kingpin generate EPC mode
 	epc = app.Command("epc", "Generate an EPC.")
 	// EPC scheme
-	epcScheme        = epc.Flag("scheme", "Scheme for EPC UII.").Short('s').Default("SGTIN-96").String()
+	epcScheme        = epc.Flag("type", "EPC UII type.").Short('t').Default("SGTIN-96").String()
 	epcCompanyPrefix = epc.Flag("companyPrefix", "Company Prefix for EPC UII.").Short('c').Default("").String()
 	epcFilterValue   = epc.Flag("filterValue", "Filter Value for EPC UII.").Short('f').Default("").String()
-	epcItemReference = epc.Flag("itemReference", "Filter Value for EPC UII.").Short('i').Default("").String()
+	epcItemReference = epc.Flag("itemReference", "Item Reference Value for EPC UII.").Short('i').Default("").String()
+	epcSerial        = epc.Flag("serial", "Serial value for EPC UII.").Short('s').Default("").String()
 
 	// kingpin generate ISO UII mode
 	iso = app.Command("iso", "Generate an ISO UII.")
@@ -241,17 +242,38 @@ func GetItemReference(ir string, cpSizes []int) (itemReference []rune) {
 	return
 }
 
+func GetSerial(s string, serialLength int) (serial []rune) {
+	if s != "" {
+		serial = SerialToBinary(s)
+		if serialLength > len(serial) {
+			leftPadding := GenerateNLengthZeroBinaryString(serialLength - len(serial))
+			serial = append(leftPadding, serial...)
+		}
+	} else {
+			serial, _ := GenerateNLengthBinaryString(serialLength, uint(math.Pow(float64(2), float64(serialLength))))
+			_ = serial
+	}
+	return serial
+}
+
 // SGTIN-96
-func GenerateRandomSGTIN96(cp string, fv string, ir string) ([]byte, error) {
+func GenerateRandomSGTIN96(cp string, fv string, ir string, s string) ([]byte, error) {
 	filter := GetFilterValue(fv)
 	partition, companyPrefix, cpSizes := GetPartitionAndCompanyPrefix(cp)
 	itemReference := GetItemReference(ir, cpSizes)
-	serial, _ := GenerateNLengthBinaryString(38, uint(math.Pow(float64(2), float64(38))))
+	serial := GetSerial(s, 38)
 
 	bs := append(filter, partition...)
 	bs = append(bs, companyPrefix...)
 	bs = append(bs, itemReference...)
 	bs = append(bs, serial...)
+
+	fmt.Println("EPC Header: %s", "00110000")
+	fmt.Println("Filter: %s", string(filter))
+	fmt.Println("Partition: %s", string(partition))
+	fmt.Println("GS1 Company Prefix: %s", string(companyPrefix))
+	fmt.Println("Item Reference: %s", string(itemReference))
+	fmt.Println("Serial: %s", string(serial))
 
 	if len(bs) != 88 {
 		fmt.Println("Something went wrong!")
@@ -425,7 +447,7 @@ func GenerateEPC() string {
 	var uii []byte
 	switch strings.ToUpper(*epcScheme) {
 	case "SGTIN-96":
-		uii, _ = GenerateRandomSGTIN96(*epcCompanyPrefix, *epcFilterValue, *epcItemReference)
+		uii, _ = GenerateRandomSGTIN96(*epcCompanyPrefix, *epcFilterValue, *epcItemReference, *epcSerial)
 	case "SSCC-96":
 		uii, _ = GenerateRandomSSCC96(*epcCompanyPrefix, *epcFilterValue)
 	case "GRAI-96":
