@@ -2,7 +2,7 @@ language: go
 sudo: required
 dist: trusty
 go:
-  - tip
+  - 1.9
 before_install:
   - go get github.com/axw/gocov/gocov
   - go get github.com/mattn/goveralls

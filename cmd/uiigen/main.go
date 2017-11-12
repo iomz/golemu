@@ -250,8 +250,8 @@ func GetSerial(s string, serialLength int) (serial []rune) {
 			serial = append(leftPadding, serial...)
 		}
 	} else {
-			serial, _ := GenerateNLengthBinaryString(serialLength, uint(math.Pow(float64(2), float64(serialLength))))
-			_ = serial
+		serial, _ := GenerateNLengthBinaryString(serialLength, uint(math.Pow(float64(2), float64(serialLength))))
+		_ = serial
 	}
 	return serial
 }
@@ -268,12 +268,12 @@ func GenerateRandomSGTIN96(cp string, fv string, ir string, s string) ([]byte, e
 	bs = append(bs, itemReference...)
 	bs = append(bs, serial...)
 
-	fmt.Println("EPC Header: %s", "00110000")
-	fmt.Println("Filter: %s", string(filter))
-	fmt.Println("Partition: %s", string(partition))
-	fmt.Println("GS1 Company Prefix: %s", string(companyPrefix))
-	fmt.Println("Item Reference: %s", string(itemReference))
-	fmt.Println("Serial: %s", string(serial))
+	//fmt.Println("EPC Header: %s", "00110000")
+	//fmt.Println("Filter: %s", string(filter))
+	//fmt.Println("Partition: %s", string(partition))
+	//fmt.Println("GS1 Company Prefix: %s", string(companyPrefix))
+	//fmt.Println("Item Reference: %s", string(itemReference))
+	//fmt.Println("Serial: %s", string(serial))
 
 	if len(bs) != 88 {
 		fmt.Println("Something went wrong!")
