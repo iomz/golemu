@@ -12,5 +12,9 @@ func main() {
 		fmt.Println("Must pass a string input")
 	}
 
-	fmt.Printf(binutil.ParseHexStringToBinString(os.Args[1]))
+	bs, err := binutil.ParseHexStringToBinString(os.Args[1])
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf(bs)
 }

@@ -4,9 +4,9 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
-	"os"
 
 	"github.com/iomz/go-llrp/binutil"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -71,11 +71,13 @@ func MakeEPC() string {
 	length := uint16(18)
 	epclen := uint16(96)
 
+	uiibs, _ := binutil.ParseHexStringToBinString(hex.EncodeToString(uii))
+
 	return hex.EncodeToString(pc) + "," +
 		strconv.FormatUint(uint64(length), 10) + "," +
 		strconv.FormatUint(uint64(epclen), 10) + "," +
 		hex.EncodeToString(uii) + "\n" +
-		binutil.ParseHexStringToBinString(hex.EncodeToString(uii))
+		uiibs
 }
 
 // MakeISO returns ISO code
@@ -121,11 +123,13 @@ func MakeISO() string {
 		}
 	*/
 
+	uiibs, _ := binutil.ParseHexStringToBinString(hex.EncodeToString(uii))
+
 	return hex.EncodeToString(pc) + "," +
 		strconv.FormatUint(uint64(length), 10) + "," +
 		strconv.FormatUint(uint64(epclen), 10) + "," +
 		hex.EncodeToString(uii) + "\n" +
-		binutil.ParseHexStringToBinString(hex.EncodeToString(uii))
+		bs
 }
 
 func main() {
