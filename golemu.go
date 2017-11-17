@@ -256,7 +256,7 @@ func runServer() int {
 		v1 := r.Group("api/v1")
 		v1.POST("/tags", APIPostTag)
 		v1.DELETE("/tags", APIDeleteTag)
-		r.Run(":"+strconv.Itoa(*webPort))
+		r.Run(":" + strconv.Itoa(*webPort))
 	}()
 
 	go func() {

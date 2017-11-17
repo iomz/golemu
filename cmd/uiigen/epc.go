@@ -6,6 +6,8 @@ import (
 	"math"
 	"os"
 	"strconv"
+
+	"github.com/iomz/golemu/binutil"
 )
 
 // GetFilterValue returns filter value as rune slice
@@ -14,7 +16,7 @@ func GetFilterValue(fv string) (filter []rune) {
 		n, _ := strconv.ParseInt(fv, 10, 32)
 		filter = []rune(fmt.Sprintf("%.3b", n))
 	} else {
-		filter, _ = GenerateNLengthRandomBinRuneSlice(3, 7)
+		filter, _ = binutil.GenerateNLengthRandomBinRuneSlice(3, 7)
 	}
 	return
 }
@@ -22,17 +24,17 @@ func GetFilterValue(fv string) (filter []rune) {
 // GetItemReference converts ItemReference value to rune slice
 func GetItemReference(ir string, cpSizes []int) (itemReference []rune) {
 	if ir != "" {
-		itemReference = ParseDecimalStringToBinRuneSlice(ir)
+		itemReference = binutil.ParseDecimalStringToBinRuneSlice(ir)
 		// If the itemReference is short, pad zeroes to the left
 		if 44-cpSizes[0] > len(itemReference) {
-			leftPadding := GenerateNLengthZeroPaddingRuneSlice(44 - cpSizes[0] - len(itemReference))
+			leftPadding := binutil.GenerateNLengthZeroPaddingRuneSlice(44 - cpSizes[0] - len(itemReference))
 			itemReference = append(leftPadding, itemReference...)
 		} else if 44-cpSizes[0] > len(itemReference) {
 			// if the resulting itemReference is bigger than it is supposed to be...
 			panic("invalid itemreference!")
 		}
 	} else {
-		itemReference, _ = GenerateNLengthRandomBinRuneSlice(44-cpSizes[0], uint(math.Pow(float64(10), float64(13-cpSizes[1]))))
+		itemReference, _ = binutil.GenerateNLengthRandomBinRuneSlice(44-cpSizes[0], uint(math.Pow(float64(10), float64(13-cpSizes[1]))))
 	}
 	return
 }
@@ -43,7 +45,7 @@ func GetPartitionAndCompanyPrefix(cp string) (partition []rune, companyPrefix []
 	var pValue uint
 	// If company prefix is already supplied
 	if cp != "" {
-		companyPrefix = ParseDecimalStringToBinRuneSlice(cp)
+		companyPrefix = binutil.ParseDecimalStringToBinRuneSlice(cp)
 		switch len(cp) {
 		case 12:
 			pValue = 0
@@ -70,12 +72,12 @@ func GetPartitionAndCompanyPrefix(cp string) (partition []rune, companyPrefix []
 		partition = []rune(fmt.Sprintf("%.3b", pValue))
 		// If the companyPrefix is short, pad zeroes to the left
 		if len(companyPrefix) != cpSizes[0] {
-			leftPadding := GenerateNLengthZeroPaddingRuneSlice(cpSizes[0] - len(companyPrefix))
+			leftPadding := binutil.GenerateNLengthZeroPaddingRuneSlice(cpSizes[0] - len(companyPrefix))
 			companyPrefix = append(leftPadding, companyPrefix...)
 		}
 	} else {
 		// SGTIN Partition Table
-		partition, pValue = GenerateNLengthRandomBinRuneSlice(3, 6)
+		partition, pValue = binutil.GenerateNLengthRandomBinRuneSlice(3, 6)
 		switch pValue {
 		case 0:
 			cpSizes = []int{40, 12}
@@ -92,7 +94,7 @@ func GetPartitionAndCompanyPrefix(cp string) (partition []rune, companyPrefix []
 		case 6:
 			cpSizes = []int{20, 6}
 		}
-		companyPrefix, _ = GenerateNLengthRandomBinRuneSlice(cpSizes[0], uint(math.Pow(float64(10), float64(cpSizes[1]))))
+		companyPrefix, _ = binutil.GenerateNLengthRandomBinRuneSlice(cpSizes[0], uint(math.Pow(float64(10), float64(cpSizes[1]))))
 	}
 	return
 }
@@ -100,13 +102,13 @@ func GetPartitionAndCompanyPrefix(cp string) (partition []rune, companyPrefix []
 // GetSerial converts serial to rune slice
 func GetSerial(s string, serialLength int) (serial []rune) {
 	if s != "" {
-		serial = ParseDecimalStringToBinRuneSlice(s)
+		serial = binutil.ParseDecimalStringToBinRuneSlice(s)
 		if serialLength > len(serial) {
-			leftPadding := GenerateNLengthZeroPaddingRuneSlice(serialLength - len(serial))
+			leftPadding := binutil.GenerateNLengthZeroPaddingRuneSlice(serialLength - len(serial))
 			serial = append(leftPadding, serial...)
 		}
 	} else {
-		serial, _ := GenerateNLengthRandomBinRuneSlice(serialLength, uint(math.Pow(float64(2), float64(serialLength))))
+		serial, _ := binutil.GenerateNLengthRandomBinRuneSlice(serialLength, uint(math.Pow(float64(2), float64(serialLength))))
 		_ = serial
 	}
 	return serial
@@ -117,7 +119,7 @@ func MakeRuneSliceOfGIAI96(cp string, fv string) ([]byte, error) {
 	filter := GetFilterValue(fv)
 	partition, companyPrefix, cpSizes := GetPartitionAndCompanyPrefix(cp)
 	// TODO: cap overflow
-	indivisualAssetReference, _ := GenerateNLengthRandomBinRuneSlice(82-cpSizes[0], uint(math.Pow(float64(10), float64(25-cpSizes[1]))))
+	indivisualAssetReference, _ := binutil.GenerateNLengthRandomBinRuneSlice(82-cpSizes[0], uint(math.Pow(float64(10), float64(25-cpSizes[1]))))
 
 	bs := append(filter, partition...)
 	bs = append(bs, companyPrefix...)
@@ -129,7 +131,7 @@ func MakeRuneSliceOfGIAI96(cp string, fv string) ([]byte, error) {
 		os.Exit(1)
 	}
 
-	p, err := ParseBinRuneSliceToUint8Slice(bs)
+	p, err := binutil.ParseBinRuneSliceToUint8Slice(bs)
 	if err != nil {
 		fmt.Println("Something went wrong!")
 		fmt.Println(err)
@@ -151,15 +153,15 @@ func MakeRuneSliceOfGIAI96(cp string, fv string) ([]byte, error) {
 		p[10],     // 8 bits -> 96 bits
 	}
 
-	return Pack(giai96), nil
+	return binutil.Pack(giai96), nil
 }
 
 // MakeRuneSliceOfGRAI96 generates GRAI-96
 func MakeRuneSliceOfGRAI96(cp string, fv string) ([]byte, error) {
 	filter := GetFilterValue(fv)
 	partition, companyPrefix, cpSizes := GetPartitionAndCompanyPrefix(cp)
-	assetType, _ := GenerateNLengthRandomBinRuneSlice(44-cpSizes[0], uint(math.Pow(float64(10), float64(12-cpSizes[1]))))
-	serial, _ := GenerateNLengthRandomBinRuneSlice(38, 0)
+	assetType, _ := binutil.GenerateNLengthRandomBinRuneSlice(44-cpSizes[0], uint(math.Pow(float64(10), float64(12-cpSizes[1]))))
+	serial, _ := binutil.GenerateNLengthRandomBinRuneSlice(38, 0)
 
 	bs := append(filter, partition...)
 	bs = append(bs, companyPrefix...)
@@ -172,7 +174,7 @@ func MakeRuneSliceOfGRAI96(cp string, fv string) ([]byte, error) {
 		os.Exit(1)
 	}
 
-	p, err := ParseBinRuneSliceToUint8Slice(bs)
+	p, err := binutil.ParseBinRuneSliceToUint8Slice(bs)
 	if err != nil {
 		fmt.Println("Something went wrong!")
 		fmt.Println(err)
@@ -194,7 +196,7 @@ func MakeRuneSliceOfGRAI96(cp string, fv string) ([]byte, error) {
 		p[10],     // 8 bits -> 96 bits
 	}
 
-	return Pack(grai96), nil
+	return binutil.Pack(grai96), nil
 }
 
 // MakeRuneSliceOfSGTIN96 generates SGTIN-96
@@ -222,7 +224,7 @@ func MakeRuneSliceOfSGTIN96(cp string, fv string, ir string, s string) ([]byte, 
 		os.Exit(1)
 	}
 
-	p, err := ParseBinRuneSliceToUint8Slice(bs)
+	p, err := binutil.ParseBinRuneSliceToUint8Slice(bs)
 	if err != nil {
 		fmt.Println("Something went wrong!")
 		fmt.Println(err)
@@ -244,17 +246,17 @@ func MakeRuneSliceOfSGTIN96(cp string, fv string, ir string, s string) ([]byte, 
 		p[10],     // 8 bits -> 96 bits
 	}
 
-	return Pack(sgtin96), nil
+	return binutil.Pack(sgtin96), nil
 }
 
 // MakeRuneSliceOfSSCC96 generates SSCC-96
 func MakeRuneSliceOfSSCC96(cp string, fv string) ([]byte, error) {
 	filter := GetFilterValue(fv)
 	partition, companyPrefix, cpSizes := GetPartitionAndCompanyPrefix(cp)
-	extension, _ := GenerateNLengthRandomBinRuneSlice(58-cpSizes[0], uint(math.Pow(float64(10), float64(17-cpSizes[1]))))
+	extension, _ := binutil.GenerateNLengthRandomBinRuneSlice(58-cpSizes[0], uint(math.Pow(float64(10), float64(17-cpSizes[1]))))
 
 	// 24 '0's
-	reserved := GenerateNLengthZeroPaddingRuneSlice(24)
+	reserved := binutil.GenerateNLengthZeroPaddingRuneSlice(24)
 
 	bs := append(filter, partition...)
 	bs = append(bs, companyPrefix...)
@@ -267,7 +269,7 @@ func MakeRuneSliceOfSSCC96(cp string, fv string) ([]byte, error) {
 		os.Exit(1)
 	}
 
-	p, err := ParseBinRuneSliceToUint8Slice(bs)
+	p, err := binutil.ParseBinRuneSliceToUint8Slice(bs)
 	if err != nil {
 		fmt.Println("Something went wrong!")
 		fmt.Println(err)
@@ -289,5 +291,5 @@ func MakeRuneSliceOfSSCC96(cp string, fv string) ([]byte, error) {
 		p[10],     // 8 bits -> 96 bits
 	}
 
-	return Pack(sscc96), nil
+	return binutil.Pack(sscc96), nil
 }
