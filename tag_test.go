@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"io/ioutil"
+	"reflect"
 	"testing"
 )
 
@@ -81,4 +82,255 @@ func TestBuildTagReportDataStack(t *testing.T) {
 }
 
 func TestGetIndexOfTag(t *testing.T) {
+}
+
+/*
+func TestTag_IsEqual(t *testing.T) {
+	type fields struct {
+		PCBits        uint16
+		Length        uint16
+		EPCLengthBits uint16
+		EPC           []byte
+		ReadData      []byte
+	}
+	type args struct {
+		tt Tag
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   bool
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t := Tag{
+				PCBits:        tt.fields.PCBits,
+				Length:        tt.fields.Length,
+				EPCLengthBits: tt.fields.EPCLengthBits,
+				EPC:           tt.fields.EPC,
+				ReadData:      tt.fields.ReadData,
+			}
+			if got := t.IsEqual(tt.args.tt); got != tt.want {
+				t.Errorf("Tag.IsEqual() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTag_IsDuplicate(t *testing.T) {
+	type fields struct {
+		PCBits        uint16
+		Length        uint16
+		EPCLengthBits uint16
+		EPC           []byte
+		ReadData      []byte
+	}
+	type args struct {
+		tt Tag
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   bool
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t := Tag{
+				PCBits:        tt.fields.PCBits,
+				Length:        tt.fields.Length,
+				EPCLengthBits: tt.fields.EPCLengthBits,
+				EPC:           tt.fields.EPC,
+				ReadData:      tt.fields.ReadData,
+			}
+			if got := t.IsDuplicate(tt.args.tt); got != tt.want {
+				t.Errorf("Tag.IsDuplicate() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTag_InString(t *testing.T) {
+	type fields struct {
+		PCBits        uint16
+		Length        uint16
+		EPCLengthBits uint16
+		EPC           []byte
+		ReadData      []byte
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   *TagInString
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t := Tag{
+				PCBits:        tt.fields.PCBits,
+				Length:        tt.fields.Length,
+				EPCLengthBits: tt.fields.EPCLengthBits,
+				EPC:           tt.fields.EPC,
+				ReadData:      tt.fields.ReadData,
+			}
+			if got := t.InString(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Tag.InString() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+*/
+
+func TestTagReportDataStack_TotalTagCounts(t *testing.T) {
+	type fields struct {
+		Stack []*TagReportData
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		want   uint
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			trds := TagReportDataStack{
+				Stack: tt.fields.Stack,
+			}
+			if got := trds.TotalTagCounts(); got != tt.want {
+				t.Errorf("TagReportDataStack.TotalTagCounts() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_buildTag(t *testing.T) {
+	type args struct {
+		record []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    Tag
+		wantErr bool
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildTag(tt.args.record)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("buildTag() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("buildTag() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_loadTagsFromCSV(t *testing.T) {
+	type args struct {
+		input string
+	}
+	tests := []struct {
+		name string
+		args args
+		want []*Tag
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := loadTagsFromCSV(tt.args.input); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("loadTagsFromCSV() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_buildTagReportDataParameter(t *testing.T) {
+	type args struct {
+		tag *Tag
+	}
+	tests := []struct {
+		name string
+		args args
+		want []byte
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := buildTagReportDataParameter(tt.args.tag); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("buildTagReportDataParameter() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_buildTagReportDataStack(t *testing.T) {
+	type args struct {
+		tags []*Tag
+	}
+	tests := []struct {
+		name string
+		args args
+		want *TagReportDataStack
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := buildTagReportDataStack(tt.args.tags); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("buildTagReportDataStack() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_getIndexOfTag(t *testing.T) {
+	type args struct {
+		tags []*Tag
+		t    *Tag
+	}
+	tests := []struct {
+		name string
+		args args
+		want int
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := getIndexOfTag(tt.args.tags, tt.args.t); got != tt.want {
+				t.Errorf("getIndexOfTag() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_writeTagsToCSV(t *testing.T) {
+	type args struct {
+		tags   []*Tag
+		output string
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+	// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writeTagsToCSV(tt.args.tags, tt.args.output)
+		})
+	}
 }
