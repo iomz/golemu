@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/iomz/golemu/binutil"
+	"github.com/iomz/go-llrp/binutil"
 )
 
 // GetFilterValue returns filter value as rune slice

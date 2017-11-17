@@ -8,7 +8,7 @@ import (
 	"strings"
 	"os"
 
-	"github.com/iomz/golemu/binutil"
+	"github.com/iomz/go-llrp/binutil"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
