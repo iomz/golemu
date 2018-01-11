@@ -1,0 +1,70 @@
+swagger: '2.0'
+info:
+  description: >-
+    This is an API documentation for an RFID reader emulator golemu.  You can
+    find out more about golemu at
+    [https://iomz.github.io/golemu/](https://iomz.github.io/golemu/).
+  version: 1.0.0
+  title: golemu
+  contact:
+    email: iomz@autoidlab.jp
+  license:
+    name: MIT
+    url: 'https://opensource.org/licenses/MIT'
+host: golemu.autoidlab.jp
+basePath: /v1
+tags:
+  - name: tags
+    description: The virtual population of RF tags
+schemes:
+  - http
+paths:
+  /tags:
+    put:
+      summary: Add new tags to the reader cycle
+      operationId: addTags
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          description: Tag object that needs to be added to the reader cycle
+          required: true
+          schema:
+            $ref: '#/definitions/Tag'
+      responses:
+        '405':
+          description: Invalid input
+    delete:
+      summary: Delete tags from the reader cycle
+      operationId: deleteTags
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      parameters:
+        - in: body
+          name: body
+          description: Tag object that needs to be removed from the reader cycle
+          required: true
+          schema:
+            $ref: '#/definitions/Tag'
+      responses:
+        '405':
+          description: Invalid input
+definitions:
+  Tag:
+    type: object
+    properties:
+      pcBits:
+        type: string
+      length:
+        type: string
+      epcLength:
+        type: string
+      epc:
+        type: string
+      readData:
+        type: string
