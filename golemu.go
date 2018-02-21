@@ -108,6 +108,7 @@ func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
 		roar := llrp.ROAccessReport(trd.Parameter, messageID)
 		atomic.AddUint32(&messageID, 1)
 		runtime.Gosched()
+		logger.Infof("%v\n", len(roar))
 
 		// Send
 		_, err := conn.Write(roar)
@@ -348,6 +349,9 @@ func runClient() int {
 		if header == llrp.ReaderEventNotificationHeader {
 			logger.Infof(">>> READER_EVENT_NOTIFICATION")
 			conn.Write(llrp.SetReaderConfig(messageID))
+		} else if header == llrp.KeepaliveHeader {
+			logger.Infof(">>> KEEP_ALIVE")
+			conn.Write(llrp.KeepaliveAck())
 		} else if header == llrp.SetReaderConfigResponseHeader {
 			logger.Infof(">>> SET_READER_CONFIG_RESPONSE")
 		} else if header == llrp.ROAccessReportHeader {
