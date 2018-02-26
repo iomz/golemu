@@ -108,7 +108,7 @@ func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
 		roar := llrp.ROAccessReport(trd.Parameter, messageID)
 		atomic.AddUint32(&messageID, 1)
 		runtime.Gosched()
-		logger.Infof("%v\n", len(roar))
+		//logger.Infof("%v\n", len(roar))
 
 		// Send
 		_, err := conn.Write(roar)
