@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -103,7 +104,9 @@ func init() {
 
 // Iterate through the Tags and write ROAccessReport message to the socket
 func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
-	for _, trd := range trds.Stack {
+	perms := rand.Perm(len(trds.Stack))
+	for _, i := range perms {
+		trd := trds.Stack[i]
 		// Append TagReportData to ROAccessReport
 		roar := llrp.ROAccessReport(trd.Parameter, messageID)
 		atomic.AddUint32(&messageID, 1)
@@ -153,41 +156,51 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 				conn.Write(llrp.SetReaderConfigResponse())
 			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
-				logger.Infof(">>> KeepaliveAck")
+				logger.Infof(">>> KEEP_ALIVE_ACK")
 			}
+
+			logger.Debugf("Initial RO_ACCESS_REPORT")
+			err := sendROAccessReport(conn, trds)
+			if err != nil {
+				logger.Errorf(err.Error())
+				isLLRPConnAlive = false
+			}
+
 			// Tick ROAR and Keepalive interval
 			roarTicker := time.NewTicker(time.Duration(*reportInterval) * time.Millisecond)
-			keepaliveTicker := time.NewTicker(10 * time.Second)
-			for { // Infinite loop
-				isLLRPConnAlive = true
-				logger.Debugf("[LLRP handler select]: %v", trds)
-				select {
-				// ROAccessReport interval tick
-				case <-roarTicker.C:
-					logger.Tracef("### roarTicker.C")
-					logger.Infof("<<< ROAccessReport (# of Tags: %v, # of TagReportData: %v)", trds.TotalTagCounts(), len(trds.Stack))
-					err := sendROAccessReport(conn, trds)
-					if err != nil {
-						logger.Errorf(err.Error())
+			keepaliveTicker := time.NewTicker(60 * time.Second)
+			go func() {
+				for { // Infinite loop
+					isLLRPConnAlive = true
+					logger.Debugf("[LLRP handler select]: %v", trds)
+					select {
+					// ROAccessReport interval tick
+					case <-roarTicker.C:
+						logger.Tracef("### roarTicker.C")
+						logger.Infof("<<< RO_ACCESS_REPORT (# of Tags: %v, # of TagReportData: %v)", trds.TotalTagCounts(), len(trds.Stack))
+						err := sendROAccessReport(conn, trds)
+						if err != nil {
+							logger.Errorf(err.Error())
+							isLLRPConnAlive = false
+						}
+					// Keepalive interval tick
+					case <-keepaliveTicker.C:
+						logger.Tracef("### keepaliveTicker.C")
+						logger.Infof("<<< KEEP_ALIVE")
+						conn.Write(llrp.Keepalive())
 						isLLRPConnAlive = false
+					// When the tag queue is updated
+					case tags := <-tagUpdated:
+						logger.Tracef("### TagUpdated")
+						trds = buildTagReportDataStack(tags)
 					}
-				// Keepalive interval tick
-				case <-keepaliveTicker.C:
-					logger.Tracef("### keepaliveTicker.C")
-					logger.Infof("<<< Keepalive")
-					conn.Write(llrp.Keepalive())
-					isLLRPConnAlive = false
-				// When the tag queue is updated
-				case tags := <-tagUpdated:
-					logger.Tracef("### TagUpdated")
-					trds = buildTagReportDataStack(tags)
+					if !isLLRPConnAlive {
+						roarTicker.Stop()
+						keepaliveTicker.Stop()
+						break
+					}
 				}
-				if !isLLRPConnAlive {
-					roarTicker.Stop()
-					keepaliveTicker.Stop()
-					break
-				}
-			}
+			}()
 		} else {
 			// Unknown LLRP packet received, reset the connection
 			logger.Warningf("Unknown header: %v, reqlen: %v", header, reqLen)
