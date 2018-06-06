@@ -18,7 +18,6 @@ type Tag struct {
 	Length        uint16
 	EPCLengthBits uint16
 	EPC           []byte
-	ReadData      []byte
 }
 
 // TagInString to represent Tag struct all in string
@@ -27,13 +26,12 @@ type TagInString struct {
 	Length        string `json:"Length"`
 	EPCLengthBits string `json:"EPCLengthBits"`
 	EPC           string `json:"EPC"`
-	ReadData      string `json:"ReadData"`
 }
 
 // IsEqual to another Tag by taking one as its argument
 // return true if they are the same
 func (t Tag) IsEqual(tt Tag) bool {
-	if t.PCBits == tt.PCBits && t.Length == tt.Length && tt.EPCLengthBits == tt.EPCLengthBits && bytes.Equal(t.EPC, tt.EPC) && bytes.Equal(t.ReadData, tt.ReadData) {
+	if t.PCBits == tt.PCBits && t.Length == tt.Length && tt.EPCLengthBits == tt.EPCLengthBits && bytes.Equal(t.EPC, tt.EPC) {
 		return true
 	}
 	return false
@@ -55,7 +53,7 @@ func (t Tag) InString() *TagInString {
 		Length:        strconv.FormatUint(uint64(t.Length), 10),
 		EPCLengthBits: strconv.FormatUint(uint64(t.EPCLengthBits), 10),
 		EPC:           hex.EncodeToString(t.EPC),
-		ReadData:      hex.EncodeToString(t.ReadData)}
+	}
 }
 
 // TagReportData holds an actual parameter in byte and
@@ -83,26 +81,31 @@ func (trds TagReportDataStack) TotalTagCounts() uint {
 // TODO: take map instead of []string
 func buildTag(record []string) (Tag, error) {
 	// If the row is incomplete
-	if len(record) != 5 {
-		var t Tag
-		return t, io.EOF
+	if len(record) != 4 {
+		return Tag{}, io.EOF
 	}
 
 	pc64, err := strconv.ParseUint(record[0], 16, 16)
-	check(err)
+	if err != nil {
+		return Tag{}, err
+	}
 	pc := uint16(pc64)
 	len64, err := strconv.ParseUint(record[1], 10, 16)
-	check(err)
+	if err != nil {
+		return Tag{}, err
+	}
 	length := uint16(len64)
 	epclen64, err := strconv.ParseUint(record[2], 10, 16)
-	check(err)
+	if err != nil {
+		return Tag{}, err
+	}
 	epclen := uint16(epclen64)
 	epc, err := hex.DecodeString(record[3])
-	check(err)
-	readData, err := hex.DecodeString(record[4])
-	check(err)
+	if err != nil {
+		return Tag{}, err
+	}
 
-	tag := Tag{pc, length, epclen, epc, readData}
+	tag := Tag{pc, length, epclen, epc}
 	return tag, nil
 }
 
@@ -133,25 +136,19 @@ func buildTagReportDataParameter(tag *Tag) []byte {
 	// EPCData
 	epcd := llrp.EPCData(tag.Length, tag.EPCLengthBits, tag.EPC)
 
-	// PeakRSSI
-	prssi := llrp.PeakRSSI()
-
 	// AirProtocolTagData
 	aptd := llrp.C1G2PC(tag.PCBits)
 
-	// OpSpecResult
-	osr := llrp.C1G2ReadOpSpecResult(tag.ReadData)
-
 	// Merge them into TagReportData
-	return llrp.TagReportData(epcd, prssi, aptd, osr)
+	return llrp.TagReportData(epcd, aptd)
 }
 
 func buildTagReportDataStack(tags []*Tag) *TagReportDataStack {
 	var param []byte
 	var trd *TagReportData
 	var trds TagReportDataStack
-	p := &trds
-	si := 0
+	p := &trds // pointer to trds
+	si := 0    // stack count
 
 	// Iterate through tags and divide them into TRD stacks
 	for _, tag := range tags {
@@ -194,7 +191,7 @@ func writeTagsToCSV(tags []*Tag, output string) {
 
 	w := csv.NewWriter(file)
 	for _, tag := range tags {
-		record := []string{strconv.FormatUint(uint64(tag.PCBits), 16), strconv.FormatUint(uint64(tag.Length), 10), strconv.FormatUint(uint64(tag.EPCLengthBits), 10), hex.EncodeToString(tag.EPC), hex.EncodeToString(tag.ReadData)}
+		record := []string{strconv.FormatUint(uint64(tag.PCBits), 16), strconv.FormatUint(uint64(tag.Length), 10), strconv.FormatUint(uint64(tag.EPCLengthBits), 10), hex.EncodeToString(tag.EPC)}
 		if err := w.Write(record); err != nil {
 			logger.Criticalf("Writing record to csv: %v", err.Error())
 		}
