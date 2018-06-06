@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -43,12 +44,6 @@ type TagManager struct {
 	tags   []*Tag
 }
 
-// Constant values
-const (
-	// BufferSize is a general size for a buffer
-	BufferSize = 512
-)
-
 var (
 	// Current Version
 	version = "0.1.0"
@@ -61,14 +56,14 @@ var (
 	initialMessageID = app.Flag("initialMessageID", "The initial messageID to start from.").Default("1000").Int()
 	// kingpin initial KeepaliveID
 	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Default("80000").Int()
+	// kingpin Protocol Data Unit for LLRP
+	pdu = app.Flag("pdu", "The maximum size of LLRP PDU.").Short('m').Default("1500").Int()
 	// kingpin tag list file
 	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 	// kingpin LLRP listening IP address
 	ip = app.Flag("ip", "LLRP listening address.").Short('a').Default("0.0.0.0").IP()
 	// kingpin keepalive interval
 	keepaliveInterval = app.Flag("keepalive", "LLRP Keepalive interval.").Short('k').Default("0").Int()
-	// kingpin maximum tag to include in ROAccessReport from RFC791
-	mtu = server.Flag("mtu", "The maximum size of LLRP packet for ROAccessReport. Pseudo ROReport spec option. 576 for default as mentioned in RFC791.").Short('m').Default("576").Int()
 	// kingpin LLRP listening port
 	port = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
 	// kingpin report interval
@@ -99,9 +94,55 @@ var (
 	notify = make(chan bool)
 	// update TagReportDataStack when tag is updated
 	tagUpdated = make(chan []*Tag)
-
-	ackCh = make(chan string)
 )
+
+// Check if error
+func check(e error) {
+	if e != nil {
+		panic(e.Error())
+	}
+}
+
+// Time
+func timeTrack(start time.Time, name string) {
+	elapsed := time.Since(start)
+	logger.Infof("%s took %s", name, elapsed)
+}
+
+// decapsulate the ROAccessReport and extract IDs
+func decapsulateROAccessReport(buf []byte) {
+	count := 0
+	defer timeTrack(time.Now(), fmt.Sprintf("unpacking %v bytes", len(buf)))
+	roarSize := uint16(binary.BigEndian.Uint32(buf[2:6])) // ROAR size
+	trds := buf[10:roarSize]                              // TRD stack
+	trdSize := binary.BigEndian.Uint16(trds[2:4])         // First TRD size
+	offset := uint16(0)
+	//logger.Debugf("len(trds): %v\n", len(trds))
+	for trdSize != 0 && int(offset) != len(trds) {
+		var id []byte
+		if trds[offset+4] == 141 { // EPC-96
+			id = trds[offset+5 : offset+17]
+			count += 1
+			//log.Printf("EPC: %v\n", id)
+		} else if binary.BigEndian.Uint16(trds[offset+4:offset+6]) == 241 {
+			epcDataSize := binary.BigEndian.Uint16(trds[offset+6 : offset+8])
+			epcLengthBits := binary.BigEndian.Uint16(trds[offset+8 : offset+10])
+			id = trds[offset+10 : offset+epcDataSize*2]
+			id = id[0 : epcLengthBits/8]
+			count += 1
+			//log.Printf("non-EPC: %v\n", id)
+		}
+		offset += trdSize
+		//logger.Debugf("offset: %v, roarSize: %v\n", offset, roarSize)
+		//logger.Debugf("trdSize: %v, len(trds): %v\n", trdSize, len(trds))
+		if int(offset) < len(trds) {
+			trdSize = binary.BigEndian.Uint16(trds[offset+2 : offset+4])
+		} else {
+			trdSize = 0
+		}
+	}
+	logger.Debugf("%v IDs found", strconv.Itoa(count))
+}
 
 // Iterate through the Tags and write ROAccessReport message to the socket
 func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
@@ -130,7 +171,7 @@ func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
 // Handles incoming requests.
 func handleRequest(conn net.Conn, tags []*Tag) {
 	// Make a buffer to hold incoming data.
-	buf := make([]byte, BufferSize)
+	buf := make([]byte, *pdu)
 	trds := buildTagReportDataStack(tags)
 
 	for {
@@ -153,11 +194,11 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 		if header == llrp.SetReaderConfigHeader || header == llrp.KeepaliveAckHeader {
 			if header == llrp.SetReaderConfigHeader {
 				// SRC received, start ROAR
-				logger.Infof(">>> SET_READER_CONFIG")
+				logger.Debugf(">>> SET_READER_CONFIG")
 				conn.Write(llrp.SetReaderConfigResponse())
 			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
-				logger.Infof(">>> KEEP_ALIVE_ACK")
+				logger.Debugf(">>> KEEP_ALIVE_ACK")
 			}
 
 			logger.Debugf("Initial RO_ACCESS_REPORT")
@@ -181,7 +222,7 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 					// ROAccessReport interval tick
 					case <-roarTicker.C:
 						logger.Tracef("### roarTicker.C")
-						logger.Infof("<<< RO_ACCESS_REPORT (# frames: %v, # total tags: %v)", len(trds.Stack), trds.TotalTagCounts())
+						logger.Infof("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds.Stack), trds.TotalTagCounts())
 						err := sendROAccessReport(conn, trds)
 						if err != nil {
 							logger.Errorf(err.Error())
@@ -350,7 +391,7 @@ func runClient() int {
 	conn, err := net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
 	check(err)
 
-	buf := make([]byte, BufferSize)
+	buf := make([]byte, *pdu)
 	for {
 		// Read the incoming connection into the buffer.
 		reqLen, err := conn.Read(buf)
@@ -375,8 +416,10 @@ func runClient() int {
 			logger.Infof(">>> SET_READER_CONFIG_RESPONSE")
 		} else if header == llrp.ROAccessReportHeader {
 			logger.Infof(">>> RO_ACCESS_REPORT")
-			logger.Debugf("Packet size: %v\n", reqLen)
-			logger.Debugf("% x\n", buf[:reqLen])
+			//logger.Debugf("Packet size: %v\n", reqLen)
+			//logger.Debugf("% x\n", buf[:reqLen])
+			// TODO: Copy the slice when this function is called?
+			decapsulateROAccessReport(buf[:reqLen])
 		} else {
 			logger.Warningf("Unknown header: %v\n", header)
 			//logger.Warningf("Message: %v", buf)
