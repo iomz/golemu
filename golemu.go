@@ -60,22 +60,24 @@ var (
 	// kingpin initial MessageID
 	initialMessageID = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
 	// kingpin initial KeepaliveID
-	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Short('k').Default("80000").Int()
-	// kingpin LLRP listening port
-	port = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
+	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Default("80000").Int()
+	// kingpin tag list file
+	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 	// kingpin LLRP listening IP address
 	ip = app.Flag("ip", "LLRP listening address.").Short('a').Default("0.0.0.0").IP()
+	// kingpin keepalive interval
+	keepaliveInterval = app.Flag("keepalive", "LLRP Keepalive interval.").Short('k').Default("0").Int()
+	// kingpin maximum tag to include in ROAccessReport
+	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
+	// kingpin LLRP listening port
+	port = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
+	// kingpin report interval
+	reportInterval = server.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("1000").Int()
+	// kingpin web port
+	webPort = server.Flag("webPort", "Port listening for web access.").Short('w').Default("3000").Int()
 
 	// kingpin server command
 	server = app.Command("server", "Run as a tag stream server.")
-	// kingpin report interval
-	reportInterval = server.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("1000").Int()
-	// kingpin maximum tag to include in ROAccessReport
-	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
-	// kingpin tag list file
-	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
-	// kingpin web port
-	webPort = server.Flag("webPort", "Port listening for web access.").Short('w').Default("3000").Int()
 
 	// kingpin client command
 	client = app.Command("client", "Run as a client mode.")
@@ -168,7 +170,10 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 
 			// Tick ROAR and Keepalive interval
 			roarTicker := time.NewTicker(time.Duration(*reportInterval) * time.Millisecond)
-			keepaliveTicker := time.NewTicker(60 * time.Second)
+			keepaliveTicker := &time.Ticker{}
+			if *keepaliveInterval != 0 {
+				keepaliveTicker = time.NewTicker(time.Duration(*keepaliveInterval) * time.Second)
+			}
 			go func() {
 				for { // Infinite loop
 					isLLRPConnAlive = true
@@ -196,7 +201,9 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 					}
 					if !isLLRPConnAlive {
 						roarTicker.Stop()
-						keepaliveTicker.Stop()
+						if *keepaliveInterval != 0 {
+							keepaliveTicker.Stop()
+						}
 						break
 					}
 				}
