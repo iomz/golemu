@@ -58,7 +58,7 @@ var (
 	// kingpin debug mode flag
 	debug = app.Flag("debug", "Enable debug mode.").Short('v').Default("false").Bool()
 	// kingpin initial MessageID
-	initialMessageID = app.Flag("initialMessageID", "The initial messageID to start from.").Short('m').Default("1000").Int()
+	initialMessageID = app.Flag("initialMessageID", "The initial messageID to start from.").Default("1000").Int()
 	// kingpin initial KeepaliveID
 	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Default("80000").Int()
 	// kingpin tag list file
@@ -67,8 +67,8 @@ var (
 	ip = app.Flag("ip", "LLRP listening address.").Short('a').Default("0.0.0.0").IP()
 	// kingpin keepalive interval
 	keepaliveInterval = app.Flag("keepalive", "LLRP Keepalive interval.").Short('k').Default("0").Int()
-	// kingpin maximum tag to include in ROAccessReport
-	maxTag = server.Flag("maxTag", "The maximum number of TagReportData parameters per ROAccessReport. Pseudo ROReport spec option. 0 for no limit.").Short('t').Default("0").Int()
+	// kingpin maximum tag to include in ROAccessReport from RFC791
+	mtu = server.Flag("mtu", "The maximum size of LLRP packet for ROAccessReport. Pseudo ROReport spec option. 576 for default as mentioned in RFC791.").Short('m').Default("576").Int()
 	// kingpin LLRP listening port
 	port = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
 	// kingpin report interval
@@ -99,10 +99,9 @@ var (
 	notify = make(chan bool)
 	// update TagReportDataStack when tag is updated
 	tagUpdated = make(chan []*Tag)
-)
 
-func init() {
-}
+	ackCh = make(chan string)
+)
 
 // Iterate through the Tags and write ROAccessReport message to the socket
 func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
@@ -182,7 +181,7 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 					// ROAccessReport interval tick
 					case <-roarTicker.C:
 						logger.Tracef("### roarTicker.C")
-						logger.Infof("<<< RO_ACCESS_REPORT (# of Tags: %v, # of TagReportData: %v)", trds.TotalTagCounts(), len(trds.Stack))
+						logger.Infof("<<< RO_ACCESS_REPORT (# frames: %v, # total tags: %v)", len(trds.Stack), trds.TotalTagCounts())
 						err := sendROAccessReport(conn, trds)
 						if err != nil {
 							logger.Errorf(err.Error())
@@ -380,6 +379,7 @@ func runClient() int {
 			logger.Debugf("% x\n", buf[:reqLen])
 		} else {
 			logger.Warningf("Unknown header: %v\n", header)
+			//logger.Warningf("Message: %v", buf)
 		}
 	}
 	return 0
