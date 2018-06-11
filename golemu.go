@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
@@ -21,6 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
+	"github.com/iomz/go-llrp/binutil"
 	"github.com/juju/loggo"
 	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -119,18 +119,24 @@ func decapsulateROAccessReport(buf []byte) {
 	offset := uint16(0)
 	//logger.Debugf("len(trds): %v\n", len(trds))
 	for trdSize != 0 && int(offset) != len(trds) {
-		var id []byte
+		var id, pc []byte
 		if trds[offset+4] == 141 { // EPC-96
 			id = trds[offset+5 : offset+17]
+			if trds[offset+17] == 140 {
+				pc = trds[offset+18 : offset+20]
+			}
 			count += 1
-			//log.Printf("EPC: %v\n", id)
-		} else if binary.BigEndian.Uint16(trds[offset+4:offset+6]) == 241 {
-			epcDataSize := binary.BigEndian.Uint16(trds[offset+6 : offset+8])
-			epcLengthBits := binary.BigEndian.Uint16(trds[offset+8 : offset+10])
+			logger.Debugf("EPC: %v, (%v)\n", id, pc)
+		} else if binary.BigEndian.Uint16(trds[offset+4:offset+6]) == 241 { // EPCData
+			epcDataSize := binary.BigEndian.Uint16(trds[offset+6 : offset+8])    // length
+			epcLengthBits := binary.BigEndian.Uint16(trds[offset+8 : offset+10]) // EPCLengthBits
 			id = trds[offset+10 : offset+epcDataSize*2]
-			id = id[0 : epcLengthBits/8]
+			id = id[0 : epcLengthBits/8] // trim the last 1 byte if it's not a multiple of a word
+			if trds[offset+epcDataSize*2] == 140 {
+				pc = trds[offset+epcDataSize*2+1 : offset+epcDataSize*2+3]
+			}
 			count += 1
-			//log.Printf("non-EPC: %v\n", id)
+			logger.Debugf("EPC: %v, (%v)\n", id, pc)
 		}
 		offset += trdSize
 		//logger.Debugf("offset: %v, roarSize: %v\n", offset, roarSize)
@@ -290,9 +296,16 @@ func runServer() int {
 		logger.Infof("%v created.", *file)
 	}
 
-	csvIn, err := ioutil.ReadFile(*file)
-	check(err)
-	tags := loadTagsFromCSV(string(csvIn))
+	// Prepare the tags
+	tags := new([]*Tag)
+	if _, err := os.Stat("tags.gob"); os.IsNotExist(err) {
+		tags = loadTagsFromCSV(*file)
+		binutil.Save("tags.gob", tags)
+	} else {
+		if err := binutil.Load("tags.gob", tags); err != nil {
+			panic(err)
+		}
+	}
 
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
@@ -329,28 +342,30 @@ func runServer() int {
 				switch cmd.action {
 				case AddTags:
 					for _, t := range cmd.tags {
-						if i := getIndexOfTag(tags, t); i < 0 {
-							tags = append(tags, t)
+						if i := getIndexOfTag(*tags, t); i < 0 {
+							*tags = append(*tags, t)
 							res = append(res, t)
-							writeTagsToCSV(tags, *file)
+							// Write to file
+							//writeTagsToCSV(*tags, *file)
 							if isLLRPConnAlive {
-								tagUpdated <- tags
+								tagUpdated <- *tags
 							}
 						}
 					}
 				case DeleteTags:
 					for _, t := range cmd.tags {
-						if i := getIndexOfTag(tags, t); i >= 0 {
-							tags = append(tags[:i], tags[i+1:]...)
+						if i := getIndexOfTag(*tags, t); i >= 0 {
+							*tags = append((*tags)[:i], (*tags)[i+1:]...)
 							res = append(res, t)
-							writeTagsToCSV(tags, *file)
+							// Write to file
+							//writeTagsToCSV(tags, *file)
 							if isLLRPConnAlive {
-								tagUpdated <- tags
+								tagUpdated <- *tags
 							}
 						}
 					}
 				case RetrieveTags:
-					res = tags
+					res = *tags
 				}
 				cmd.tags = res
 				tagManager <- cmd
@@ -381,7 +396,7 @@ func runServer() int {
 		time.Sleep(time.Millisecond)
 
 		// Handle connections in a new goroutine.
-		go handleRequest(conn, tags)
+		go handleRequest(conn, *tags)
 	}
 }
 

@@ -25,7 +25,7 @@ func ReqAddTag(ut string, req []TagInString) string {
 	// TODO: success/fail notification per tag
 	failed := false
 	for _, t := range req {
-		tag, err := buildTag([]string{t.PCBits, t.Length, t.EPCLengthBits, t.EPC})
+		tag, err := buildTag(&TagRecord{t.PCBits, t.EPC})
 		check(err)
 
 		add := &TagManager{
@@ -59,7 +59,7 @@ func ReqDeleteTag(ut string, req []TagInString) string {
 	// TODO: success/fail notification per tag
 	failed := false
 	for _, t := range req {
-		tag, err := buildTag([]string{t.PCBits, t.Length, t.EPCLengthBits, t.EPC})
+		tag, err := buildTag(&TagRecord{t.PCBits, t.EPC})
 		check(err)
 
 		delete := &TagManager{
