@@ -20,7 +20,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
-	"github.com/iomz/go-llrp/binutil"
+	//"github.com/iomz/go-llrp/binutil"
 	"github.com/juju/loggo"
 	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -56,23 +56,23 @@ var (
 	initialMessageID = app.Flag("initialMessageID", "The initial messageID to start from.").Default("1000").Int()
 	// kingpin initial KeepaliveID
 	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Default("80000").Int()
-	// kingpin Protocol Data Unit for LLRP
-	pdu = app.Flag("pdu", "The maximum size of LLRP PDU.").Short('m').Default("1500").Int()
-	// kingpin tag list file
-	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 	// kingpin LLRP listening IP address
 	ip = app.Flag("ip", "LLRP listening address.").Short('a').Default("0.0.0.0").IP()
 	// kingpin keepalive interval
 	keepaliveInterval = app.Flag("keepalive", "LLRP Keepalive interval.").Short('k').Default("0").Int()
 	// kingpin LLRP listening port
 	port = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
+
+	// kingpin server command
+	server = app.Command("server", "Run as a tag stream server.")
 	// kingpin report interval
 	reportInterval = server.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("1000").Int()
 	// kingpin web port
 	webPort = server.Flag("webPort", "Port listening for web access.").Short('w').Default("3000").Int()
-
-	// kingpin server command
-	server = app.Command("server", "Run as a tag stream server.")
+	// kingpin Protocol Data Unit for LLRP
+	pdu = server.Flag("pdu", "The maximum size of LLRP PDU.").Short('m').Default("1500").Int()
+	// kingpin tag list file
+	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 
 	// kingpin client command
 	client = app.Command("client", "Run as a client mode.")
@@ -106,69 +106,75 @@ func check(e error) {
 // Time
 func timeTrack(start time.Time, name string) {
 	elapsed := time.Since(start)
-	logger.Infof("%s took %s", name, elapsed)
+	logger.Debugf("%s took %s", name, elapsed)
 }
 
 // decapsulate the ROAccessReport and extract IDs
-func decapsulateROAccessReport(buf []byte) {
+func decapsulateROAccessReport(roarLength uint32, buf []byte) int {
 	count := 0
 	defer timeTrack(time.Now(), fmt.Sprintf("unpacking %v bytes", len(buf)))
-	roarSize := uint16(binary.BigEndian.Uint32(buf[2:6])) // ROAR size
-	trds := buf[10:roarSize]                              // TRD stack
-	trdSize := binary.BigEndian.Uint16(trds[2:4])         // First TRD size
-	offset := uint16(0)
+	trds := buf[4 : roarLength-6] // TRD stack
+	trdLength := uint16(0)        // First TRD size
+	offset := uint32(0)           // the start of TRD
 	//logger.Debugf("len(trds): %v\n", len(trds))
-	for trdSize != 0 && int(offset) != len(trds) {
+	//for trdLength != 0 && int(offset) != len(trds) {
+	for {
+		if uint32(10+offset) < roarLength {
+			trdLength = binary.BigEndian.Uint16(trds[offset+2 : offset+4])
+		} else {
+			break
+		}
 		var id, pc []byte
 		if trds[offset+4] == 141 { // EPC-96
 			id = trds[offset+5 : offset+17]
-			if trds[offset+17] == 140 {
+			if trds[offset+17] == 140 { // C1G2-PC parameter
 				pc = trds[offset+18 : offset+20]
 			}
-			count += 1
-			logger.Debugf("EPC: %v, (%v)\n", id, pc)
+			count++
+			//logger.Debugf("EPC: %v, (%x)\n", id, pc)
 		} else if binary.BigEndian.Uint16(trds[offset+4:offset+6]) == 241 { // EPCData
-			epcDataSize := binary.BigEndian.Uint16(trds[offset+6 : offset+8])    // length
+			epcDataLength := binary.BigEndian.Uint16(trds[offset+6 : offset+8])  // length
 			epcLengthBits := binary.BigEndian.Uint16(trds[offset+8 : offset+10]) // EPCLengthBits
-			id = trds[offset+10 : offset+epcDataSize*2]
-			id = id[0 : epcLengthBits/8] // trim the last 1 byte if it's not a multiple of a word
-			if trds[offset+epcDataSize*2] == 140 {
-				pc = trds[offset+epcDataSize*2+1 : offset+epcDataSize*2+3]
+			epcLengthBytes := uint32(epcLengthBits / 8)
+			/*
+				// ID length in byte = Length - (6 + 10 + 16 + 16)/8
+				//id = trds[offset+6 : offset+epcDataSize-6]
+				// trim the last 1 byte if it's not a multiple of a word
+				//id = id[0 : epcLengthBits/8]
+			*/
+			id = trds[offset+10 : offset+10+epcLengthBytes]
+			if 4+epcDataLength < trdLength && trds[offset+10+epcLengthBytes] == 140 { // C1G2-PC parameter
+				pc = trds[offset+10+epcLengthBytes+1 : offset+10+epcLengthBytes+3]
 			}
-			count += 1
-			logger.Debugf("EPC: %v, (%v)\n", id, pc)
+			_ = id
+			_ = pc
+			count++
+			//logger.Debugf("EPC: %v, (%x)\n", id, pc)
 		}
-		offset += trdSize
-		//logger.Debugf("offset: %v, roarSize: %v\n", offset, roarSize)
-		//logger.Debugf("trdSize: %v, len(trds): %v\n", trdSize, len(trds))
-		if int(offset) < len(trds) {
-			trdSize = binary.BigEndian.Uint16(trds[offset+2 : offset+4])
-		} else {
-			trdSize = 0
-		}
+		offset += uint32(trdLength) // move the offset at the end of this TRD
+		//logger.Debugf("offset: %v, roarLength: %v\n", offset, roarLength)
+		//logger.Debugf("trdLength: %v, len(trds): %v\n", trdLength, len(trds))
 	}
-	logger.Debugf("%v IDs found", strconv.Itoa(count))
+	return count
 }
 
 // Iterate through the Tags and write ROAccessReport message to the socket
 func sendROAccessReport(conn net.Conn, trds *TagReportDataStack) error {
 	perms := rand.Perm(len(trds.Stack))
+	//buf := make([]byte, 512)
 	for _, i := range perms {
 		trd := trds.Stack[i]
 		// Append TagReportData to ROAccessReport
 		roar := llrp.ROAccessReport(trd.Parameter, messageID)
 		atomic.AddUint32(&messageID, 1)
 		runtime.Gosched()
-		//logger.Infof("%v\n", len(roar))
 
 		// Send
 		_, err := conn.Write(roar)
 		if err != nil {
 			return err
 		}
-
-		// Wait until ACK received
-		time.Sleep(time.Millisecond)
+		//time.Sleep(time.Millisecond)
 	}
 
 	return nil
@@ -200,18 +206,11 @@ func handleRequest(conn net.Conn, tags []*Tag) {
 		if header == llrp.SetReaderConfigHeader || header == llrp.KeepaliveAckHeader {
 			if header == llrp.SetReaderConfigHeader {
 				// SRC received, start ROAR
-				logger.Debugf(">>> SET_READER_CONFIG")
+				logger.Infof(">>> SET_READER_CONFIG")
 				conn.Write(llrp.SetReaderConfigResponse())
 			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
-				logger.Debugf(">>> KEEP_ALIVE_ACK")
-			}
-
-			logger.Debugf("Initial RO_ACCESS_REPORT")
-			err := sendROAccessReport(conn, trds)
-			if err != nil {
-				logger.Errorf(err.Error())
-				isLLRPConnAlive = false
+				logger.Infof(">>> KEEP_ALIVE_ACK")
 			}
 
 			// Tick ROAR and Keepalive interval
@@ -297,15 +296,18 @@ func runServer() int {
 	}
 
 	// Prepare the tags
-	tags := new([]*Tag)
-	if _, err := os.Stat("tags.gob"); os.IsNotExist(err) {
-		tags = loadTagsFromCSV(*file)
-		binutil.Save("tags.gob", tags)
-	} else {
-		if err := binutil.Load("tags.gob", tags); err != nil {
-			panic(err)
+	/*
+		tags := new([]*Tag)
+		if _, err := os.Stat("tags.gob"); os.IsNotExist(err) {
+			tags = loadTagsFromCSV(*file)
+			binutil.Save("tags.gob", tags)
+		} else {
+			if err := binutil.Load("tags.gob", tags); err != nil {
+				panic(err)
+			}
 		}
-	}
+	*/
+	tags := loadTagsFromCSV(*file)
 
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
@@ -406,38 +408,42 @@ func runClient() int {
 	conn, err := net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
 	check(err)
 
-	buf := make([]byte, *pdu)
+	header := make([]byte, 2)
+	length := make([]byte, 4)
+	count := 0
 	for {
-		// Read the incoming connection into the buffer.
-		reqLen, err := conn.Read(buf)
-		if err == io.EOF {
-			// Close the connection when you're done with it.
-			return 0
-		} else if err != nil {
-			logger.Errorf(err.Error())
-			logger.Errorf("reqLen = %v", reqLen)
-			conn.Close()
-			break
-		}
+		_, err = io.ReadFull(conn, header)
+		//length := binary.BigEndian.Uint32(prefix)
 
-		header := binary.BigEndian.Uint16(buf[:2])
-		if header == llrp.ReaderEventNotificationHeader {
+		h := binary.BigEndian.Uint16(header)
+		if h == llrp.ReaderEventNotificationHeader {
+			_, err = io.ReadFull(conn, length)
+			message := make([]byte, binary.BigEndian.Uint32(length)-6)
+			_, err = io.ReadFull(conn, message)
 			logger.Infof(">>> READER_EVENT_NOTIFICATION")
 			conn.Write(llrp.SetReaderConfig(messageID))
-		} else if header == llrp.KeepaliveHeader {
+		} else if h == llrp.KeepaliveHeader {
+			_, err = io.ReadFull(conn, length)
+			message := make([]byte, binary.BigEndian.Uint32(length)-6)
+			_, err = io.ReadFull(conn, message)
 			logger.Infof(">>> KEEP_ALIVE")
 			conn.Write(llrp.KeepaliveAck())
-		} else if header == llrp.SetReaderConfigResponseHeader {
+		} else if h == llrp.SetReaderConfigResponseHeader {
+			_, err = io.ReadFull(conn, length)
+			message := make([]byte, binary.BigEndian.Uint32(length)-6)
+			_, err = io.ReadFull(conn, message)
 			logger.Infof(">>> SET_READER_CONFIG_RESPONSE")
-		} else if header == llrp.ROAccessReportHeader {
+		} else if h == llrp.ROAccessReportHeader {
+			_, err = io.ReadFull(conn, length)
+			l := binary.BigEndian.Uint32(length)
+			message := make([]byte, l-6)
+			_, err = io.ReadFull(conn, message)
 			logger.Infof(">>> RO_ACCESS_REPORT")
-			//logger.Debugf("Packet size: %v\n", reqLen)
-			//logger.Debugf("% x\n", buf[:reqLen])
-			// TODO: Copy the slice when this function is called?
-			decapsulateROAccessReport(buf[:reqLen])
+			count += decapsulateROAccessReport(l, message)
+			logger.Debugf("%v", count)
 		} else {
-			logger.Warningf("Unknown header: %v\n", header)
-			//logger.Warningf("Message: %v", buf)
+			logger.Warningf("Unknown header: %v", h)
+			return 1
 		}
 	}
 	return 0

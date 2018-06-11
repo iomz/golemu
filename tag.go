@@ -182,9 +182,10 @@ func buildTagReportDataStack(tags []*Tag) *TagReportDataStack {
 	// Iterate through tags and divide them into TRD stacks
 	for _, tag := range tags {
 		// When exceeds maxTag per TRD, append another TRD in the stack
-		// 100 bytes for the offset for IP frame and ROAR headers
+		// 256 bytes for the offset for IP frame and ROAR headers
 		param = buildTagReportDataParameter(tag)
-		if len(p.Stack) != 0 && len(p.Stack[si].Parameter)+len(param)+100 > *pdu {
+		if len(p.Stack) != 0 &&
+			10+len(p.Stack[si].Parameter)+4+len(param) >= *pdu {
 			trd = &TagReportData{Parameter: param, TagCount: 1}
 			p.Stack = append(p.Stack, trd)
 			si++
