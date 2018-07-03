@@ -433,30 +433,30 @@ func runServer() int {
 				switch cmd.Action {
 				case golemu.AddTags:
 					for _, t := range cmd.Tags {
-						if i := golemu.GetIndexOfTag(*tags, t); i < 0 {
-							*tags = append(*tags, t)
+						if i := golemu.GetIndexOfTag(tags, t); i < 0 {
+							tags = append(tags, t)
 							res = append(res, t)
 							// Write to file
 							//writeTagsToCSV(*tags, *file)
 							if isLLRPConnAlive {
-								tagUpdated <- *tags
+								tagUpdated <- tags
 							}
 						}
 					}
 				case golemu.DeleteTags:
 					for _, t := range cmd.Tags {
-						if i := golemu.GetIndexOfTag(*tags, t); i >= 0 {
-							*tags = append((*tags)[:i], (*tags)[i+1:]...)
+						if i := golemu.GetIndexOfTag(tags, t); i >= 0 {
+							tags = append(tags[:i], tags[i+1:]...)
 							res = append(res, t)
 							// Write to file
 							//writeTagsToCSV(tags, *file)
 							if isLLRPConnAlive {
-								tagUpdated <- *tags
+								tagUpdated <- tags
 							}
 						}
 					}
 				case golemu.RetrieveTags:
-					res = *tags
+					res = tags
 				}
 				cmd.Tags = res
 				tagManagerChannel <- cmd
@@ -486,7 +486,7 @@ func runServer() int {
 		time.Sleep(time.Millisecond)
 
 		// Handle connections in a new goroutine.
-		go handleRequest(conn, *tags)
+		go handleRequest(conn, tags)
 	}
 }
 

@@ -195,7 +195,7 @@ func GetIndexOfTag(tags []*Tag, t *Tag) int {
 }
 
 // LoadTagsFromCSV reads Tag data from the CSV strings and returns a slice of Tag struct pointers
-func LoadTagsFromCSV(inputFile string) *[]*Tag {
+func LoadTagsFromCSV(inputFile string) []*Tag {
 	// Check inputFile
 	fp, err := os.Open(inputFile)
 	if err != nil {
@@ -226,7 +226,7 @@ func LoadTagsFromCSV(inputFile string) *[]*Tag {
 		}
 	}
 
-	return &tags
+	return tags
 }
 
 /*
