@@ -1,32 +1,13 @@
 package main
 
 import (
-	"errors"
-	"testing"
-	// for benchmark
-	//"github.com/iomz/go-llrp"
+//"reflect"
+//"testing"
+
+//"golang.org/x/net/websocket"
+// for benchmark
+//"github.com/iomz/go-llrp"
 )
-
-func TestCheck(t *testing.T) {
-	e := errors.New("dummy error")
-	check(nil)
-	assertCheckPanic(t, check, e)
-}
-
-func assertCheckPanic(t *testing.T, f func(error), e error) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Errorf("The code did not panic")
-		}
-	}()
-	f(e)
-}
-
-func TestSendROAccessReport(t *testing.T) {
-}
-
-func TestHandleRequest(t *testing.T) {
-}
 
 /*
 // Benchmark LLRP frame construction
