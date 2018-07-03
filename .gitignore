@@ -3,7 +3,6 @@
 *.json
 *.old
 *.swp
-golemu
 public/*
 public/vendor/*
 scenario*

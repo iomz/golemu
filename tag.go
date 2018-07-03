@@ -1,39 +1,52 @@
-package main
+package golemu
 
 import (
 	"bytes"
 	"encoding/csv"
+	"encoding/gob"
 	"encoding/hex"
 	"io"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/iomz/go-llrp"
+	"github.com/iomz/go-llrp/binutil"
 )
 
 // Tag holds a single virtual tag content
 type Tag struct {
-	PCBits        uint16
-	Length        uint16
-	EPCLengthBits uint16
-	EPC           []byte
-	ReadData      []byte
+	PCBits uint16
+	EPC    []byte
 }
 
-// TagInString to represent Tag struct all in string
-type TagInString struct {
-	PCBits        string `json:"PCBits"`
-	Length        string `json:"Length"`
-	EPCLengthBits string `json:"EPCLengthBits"`
-	EPC           string `json:"EPC"`
-	ReadData      string `json:"ReadData"`
+// TagRecord stors the Tags contents in string with json tags
+type TagRecord struct {
+	PCBits string `json:"PCBits"`
+	EPC    string `json:"EPC"`
 }
+
+// TagManager is a struct for tag management channel
+type TagManager struct {
+	Action ManagementAction
+	Tags   []*Tag
+}
+
+// ManagementAction is a type for TagManager
+type ManagementAction int
+
+const (
+	// RetrieveTags is a const for retrieving tags
+	RetrieveTags ManagementAction = iota
+	// AddTags is a const for adding tags
+	AddTags
+	// DeleteTags is a const for deleting tags
+	DeleteTags
+)
 
 // IsEqual to another Tag by taking one as its argument
 // return true if they are the same
 func (t Tag) IsEqual(tt Tag) bool {
-	if t.PCBits == tt.PCBits && t.Length == tt.Length && tt.EPCLengthBits == tt.EPCLengthBits && bytes.Equal(t.EPC, tt.EPC) && bytes.Equal(t.ReadData, tt.ReadData) {
+	if t.PCBits == tt.PCBits && bytes.Equal(t.EPC, tt.EPC) {
 		return true
 	}
 	return false
@@ -49,13 +62,32 @@ func (t Tag) IsDuplicate(tt Tag) bool {
 }
 
 // InString returns Tag structs in TagInString structs
-func (t Tag) InString() *TagInString {
-	return &TagInString{
-		PCBits:        strconv.FormatUint(uint64(t.PCBits), 16),
-		Length:        strconv.FormatUint(uint64(t.Length), 10),
-		EPCLengthBits: strconv.FormatUint(uint64(t.EPCLengthBits), 10),
-		EPC:           hex.EncodeToString(t.EPC),
-		ReadData:      hex.EncodeToString(t.ReadData)}
+func (t Tag) InString() *TagRecord {
+	return &TagRecord{
+		PCBits: strconv.FormatUint(uint64(t.PCBits), 16),
+		EPC:    hex.EncodeToString(t.EPC),
+	}
+}
+
+// MarshalBinary overwrites the marshaller in gob encoding *Tag
+func (t *Tag) MarshalBinary() (_ []byte, err error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	enc.Encode(t.PCBits)
+	enc.Encode(t.EPC)
+	return buf.Bytes(), err
+}
+
+// UnmarshalBinary overwrites the unmarshaller in gob decoding *PatriciaTrie
+func (t *Tag) UnmarshalBinary(data []byte) (err error) {
+	dec := gob.NewDecoder(bytes.NewReader(data))
+	if err = dec.Decode(&t.PCBits); err != nil {
+		return
+	}
+	if err = dec.Decode(&t.EPC); err != nil {
+		return
+	}
+	return
 }
 
 // TagReportData holds an actual parameter in byte and
@@ -79,90 +111,63 @@ func (trds TagReportDataStack) TotalTagCounts() uint {
 	return ttc
 }
 
-// Construct Tag struct from Tag info strings
-// TODO: take map instead of []string
-func buildTag(record []string) (Tag, error) {
-	// If the row is incomplete
-	if len(record) != 5 {
-		var t Tag
-		return t, io.EOF
-	}
-
-	pc64, err := strconv.ParseUint(record[0], 16, 16)
-	check(err)
-	pc := uint16(pc64)
-	len64, err := strconv.ParseUint(record[1], 10, 16)
-	check(err)
-	length := uint16(len64)
-	epclen64, err := strconv.ParseUint(record[2], 10, 16)
-	check(err)
-	epclen := uint16(epclen64)
-	epc, err := hex.DecodeString(record[3])
-	check(err)
-	readData, err := hex.DecodeString(record[4])
-	check(err)
-
-	tag := Tag{pc, length, epclen, epc, readData}
-	return tag, nil
+func makeByteID(s string) ([]byte, error) {
+	id, err := binutil.ParseBinRuneSliceToUint8Slice([]rune(s))
+	return binutil.Pack([]interface{}{id}), err
 }
 
-// Read Tag data from the CSV strings and returns a slice of Tag struct pointers
-func loadTagsFromCSV(input string) []*Tag {
-	r := csv.NewReader(strings.NewReader(input))
-	tags := []*Tag{}
-	for {
-		record, err := r.Read()
-		// If reached at the end
-		if err == io.EOF {
-			break
-		}
-		check(err)
-
-		// Construct a tag read data
-		tag, err := buildTag(record)
-		if err != nil {
-			continue
-		}
-		tags = append(tags, &tag)
+// NewTag onstructs a Tag struct from a TagRecord
+func NewTag(tagRecord *TagRecord) (*Tag, error) {
+	// PCbits
+	pc64, err := strconv.ParseUint(tagRecord.PCBits, 16, 16)
+	if err != nil {
+		return &Tag{}, err
 	}
-	return tags
+	pc := uint16(pc64)
+
+	// EPC
+	epc, err := makeByteID(tagRecord.EPC)
+	if err != nil {
+		return &Tag{}, err
+	}
+
+	return &Tag{pc, epc}, nil
 }
 
 // Take one Tag struct and build TagReportData parameter payload in []byte
 func buildTagReportDataParameter(tag *Tag) []byte {
 	// EPCData
-	epcd := llrp.EPCData(tag.Length, tag.EPCLengthBits, tag.EPC)
-
-	// PeakRSSI
-	prssi := llrp.PeakRSSI()
+	// Calculate the right length fro, epc and pcbits
+	epcLengthBits := len(tag.EPC) * 8 // # bytes * 8 = # bits
+	length := 4 + 2 + len(tag.EPC)    // header + epcLengthBits + epc
+	epcd := llrp.EPCData(uint16(length), uint16(epcLengthBits), tag.EPC)
 
 	// AirProtocolTagData
 	aptd := llrp.C1G2PC(tag.PCBits)
 
-	// OpSpecResult
-	osr := llrp.C1G2ReadOpSpecResult(tag.ReadData)
-
 	// Merge them into TagReportData
-	return llrp.TagReportData(epcd, prssi, aptd, osr)
+	return llrp.TagReportData(epcd, aptd)
 }
 
-func buildTagReportDataStack(tags []*Tag) *TagReportDataStack {
+// BuildTagReportDataStack takes []*Tag and PDU value to build a new trds
+func BuildTagReportDataStack(tags []*Tag, pdu int) *TagReportDataStack {
 	var param []byte
 	var trd *TagReportData
 	var trds TagReportDataStack
-	p := &trds
-	si := 0
+	p := &trds // pointer to trds
+	si := 0    // stack count
 
 	// Iterate through tags and divide them into TRD stacks
 	for _, tag := range tags {
-		if len(p.Stack) != 0 && int(p.Stack[si].TagCount+1) > *maxTag && *maxTag != 0 {
-			// When exceeds maxTag per TRD, append another TRD in the stack
-			param = buildTagReportDataParameter(tag)
+		// When exceeds maxTag per TRD, append another TRD in the stack
+		// 256 bytes for the offset for IP frame and ROAR headers
+		param = buildTagReportDataParameter(tag)
+		if len(p.Stack) != 0 &&
+			10+len(p.Stack[si].Parameter)+4+len(param) >= pdu {
 			trd = &TagReportData{Parameter: param, TagCount: 1}
 			p.Stack = append(p.Stack, trd)
 			si++
 		} else {
-			param = buildTagReportDataParameter(tag)
 			if len(p.Stack) == 0 {
 				// First TRD
 				trd = &TagReportData{Parameter: param, TagCount: 1}
@@ -177,7 +182,8 @@ func buildTagReportDataStack(tags []*Tag) *TagReportDataStack {
 	return p
 }
 
-func getIndexOfTag(tags []*Tag, t *Tag) int {
+// GetIndexOfTag find the index in []*Tag
+func GetIndexOfTag(tags []*Tag, t *Tag) int {
 	index := 0
 	for _, tag := range tags {
 		if tag.IsDuplicate(*t) {
@@ -188,13 +194,49 @@ func getIndexOfTag(tags []*Tag, t *Tag) int {
 	return -1
 }
 
+// LoadTagsFromCSV reads Tag data from the CSV strings and returns a slice of Tag struct pointers
+func LoadTagsFromCSV(inputFile string) *[]*Tag {
+	// Check inputFile
+	fp, err := os.Open(inputFile)
+	if err != nil {
+		panic(err)
+	}
+	defer fp.Close()
+
+	// Read CSV and store in []*Tag
+	tags := []*Tag{}
+	reader := csv.NewReader(fp)
+	reader.Comma = ','
+	reader.LazyQuotes = true
+	for {
+		record, err := reader.Read()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			panic(err)
+		}
+		if len(record) == 2 {
+			tagRecord := &TagRecord{record[0], record[1]} // PCbits, EPC
+			// Construct a tag read data
+			tag, err := NewTag(tagRecord)
+			if err != nil {
+				continue
+			}
+			tags = append(tags, tag)
+		}
+	}
+
+	return &tags
+}
+
+/*
 func writeTagsToCSV(tags []*Tag, output string) {
 	file, err := os.Create(output)
 	check(err)
 
 	w := csv.NewWriter(file)
 	for _, tag := range tags {
-		record := []string{strconv.FormatUint(uint64(tag.PCBits), 16), strconv.FormatUint(uint64(tag.Length), 10), strconv.FormatUint(uint64(tag.EPCLengthBits), 10), hex.EncodeToString(tag.EPC), hex.EncodeToString(tag.ReadData)}
+		record := []string{strconv.FormatUint(uint64(tag.PCBits), 16), strconv.FormatUint(uint64(tag.Length), 10), strconv.FormatUint(uint64(tag.EPCLengthBits), 10), hex.EncodeToString(tag.EPC)}
 		if err := w.Write(record); err != nil {
 			logger.Criticalf("Writing record to csv: %v", err.Error())
 		}
@@ -205,3 +247,4 @@ func writeTagsToCSV(tags []*Tag, output string) {
 	}
 	file.Close()
 }
+*/
