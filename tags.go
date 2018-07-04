@@ -6,8 +6,8 @@
 package golemu
 
 import (
-//"bytes"
-//"encoding/gob"
+	"bytes"
+	"encoding/gob"
 )
 
 // Tags holds a slice of pointers to Tag
@@ -57,16 +57,42 @@ func (tags Tags) GetIndexOf(t *Tag) int {
 	return -1
 }
 
-/*
 // MarshalBinary overwrites the marshaller in gob encoding Tags
 func (tags Tags) MarshalBinary() (_ []byte, err error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+
+	// Size of List
+	enc.Encode(len(tags))
+	for _, tag := range tags {
+		// Tag
+		enc.Encode(tag)
+	}
+
+	return buf.Bytes(), err
 }
 
 // UnmarshalBinary overwrites the unmarshaller in gob decoding Tags
 func (tags Tags) UnmarshalBinary(data []byte) (err error) {
+	dec := gob.NewDecoder(bytes.NewReader(data))
+
+	// Size of Tags
+	var tagsSize int
+	if err = dec.Decode(&tagsSize); err != nil {
+		return
+	}
+
+	for i := 0; i < tagsSize; i++ {
+		var tag Tag
+		// Tag
+		if err = dec.Decode(&tag); err != nil {
+			return
+		}
+		tags = append(tags, &tag)
+	}
+
 	return
 }
-*/
 
 /*
 func (tags Tags) writeTagsToCSV(output string) {
