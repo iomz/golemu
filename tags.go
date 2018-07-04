@@ -49,7 +49,7 @@ func (tags Tags) BuildTagReportDataStack(pdu int) TagReportDataStack {
 func (tags Tags) GetIndexOf(t *Tag) int {
 	index := 0
 	for _, tag := range tags {
-		if tag.IsDuplicate(*t) {
+		if tag.IsDuplicate(t) {
 			return index
 		}
 		index++

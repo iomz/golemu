@@ -62,7 +62,7 @@ func (t *Tag) UnmarshalBinary(data []byte) (err error) {
 
 // IsEqual to another Tag by taking one as its argument
 // return true if they are the same
-func (t *Tag) IsEqual(tt Tag) bool {
+func (t *Tag) IsEqual(tt *Tag) bool {
 	if t.PCBits == tt.PCBits && bytes.Equal(t.EPC, tt.EPC) {
 		return true
 	}
@@ -71,7 +71,7 @@ func (t *Tag) IsEqual(tt Tag) bool {
 
 // IsDuplicate to test another Tag by comparing only EPC
 // return true if the EPCs are the same
-func (t *Tag) IsDuplicate(tt Tag) bool {
+func (t *Tag) IsDuplicate(tt *Tag) bool {
 	if bytes.Equal(t.EPC, tt.EPC) {
 		return true
 	}
