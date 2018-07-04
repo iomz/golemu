@@ -74,11 +74,11 @@ func DecapsulateROAccessReport(roarLength uint32, buf []byte) int {
 }
 
 // SendROAccessReport iterates through the Tags and write ROAccessReport message to the socket
-func SendROAccessReport(conn net.Conn, trds *TagReportDataStack, messageID *uint32) error {
-	perms := rand.Perm(len(trds.Stack))
+func SendROAccessReport(conn net.Conn, trds TagReportDataStack, messageID *uint32) error {
+	perms := rand.Perm(len(trds))
 	//buf := make([]byte, 512)
 	for _, i := range perms {
-		trd := trds.Stack[i]
+		trd := trds[i]
 		// Append TagReportData to ROAccessReport
 		roar := llrp.ROAccessReport(trd.Parameter, *messageID)
 		atomic.AddUint32(messageID, 1)

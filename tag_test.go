@@ -1,3 +1,8 @@
+// Copyright (c) 2018 Iori Mizutani
+//
+// Use of this source code is governed by The MIT License
+// that can be found in the LICENSE file.
+
 package golemu
 
 import (
@@ -75,7 +80,7 @@ func TestBuildTagReportDataParameter(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 		}
-		param := buildTagReportDataParameter(tag)
+		param := tag.BuildTagReportDataParameter()
 		if !bytes.Equal(param, tt.out) {
 			t.Errorf("%v => \n%v, want \n%v", tt.in, param, tt.out)
 		}

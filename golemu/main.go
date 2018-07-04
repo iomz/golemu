@@ -76,7 +76,7 @@ var (
 	// notify tag update channel
 	notify = make(chan bool)
 	// update TagReportDataStack when tag is updated
-	tagUpdated = make(chan []*golemu.Tag)
+	tagUpdated = make(chan golemu.Tags)
 )
 
 // WebsocketMessage to unmarshal JSON message from web clients
@@ -218,7 +218,7 @@ func ReqRetrieveTag() []map[string]interface{} {
 	retrieve = <-tagManagerChannel
 	var tagList []map[string]interface{}
 	for _, tag := range retrieve.Tags {
-		t := structs.Map(tag.InString())
+		t := structs.Map(tag.ToTagRecord())
 		tagList = append(tagList, t)
 	}
 	log.Printf("retrieve: %v", tagList)
@@ -291,10 +291,10 @@ func SockServer(ws *websocket.Conn) {
 }
 
 // Handles incoming requests.
-func handleRequest(conn net.Conn, tags []*golemu.Tag) {
+func handleRequest(conn net.Conn, tags golemu.Tags) {
 	// Make a buffer to hold incoming data.
 	buf := make([]byte, *pdu)
-	trds := golemu.BuildTagReportDataStack(tags, *pdu)
+	trds := tags.BuildTagReportDataStack(*pdu)
 
 	for {
 		// Read the incoming connection into the buffer.
@@ -335,7 +335,7 @@ func handleRequest(conn net.Conn, tags []*golemu.Tag) {
 					select {
 					// ROAccessReport interval tick
 					case <-roarTicker.C:
-						log.Printf("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds.Stack), trds.TotalTagCounts())
+						log.Printf("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
 						err := golemu.SendROAccessReport(conn, trds, &messageID)
 						if err != nil {
 							log.Print(err)
@@ -349,7 +349,7 @@ func handleRequest(conn net.Conn, tags []*golemu.Tag) {
 					// When the tag queue is updated
 					case tags := <-tagUpdated:
 						log.Println("### TagUpdated")
-						trds = golemu.BuildTagReportDataStack(tags, *pdu)
+						trds = tags.BuildTagReportDataStack(*pdu)
 					}
 					if !isLLRPConnAlive {
 						roarTicker.Stop()
@@ -433,7 +433,7 @@ func runServer() int {
 				switch cmd.Action {
 				case golemu.AddTags:
 					for _, t := range cmd.Tags {
-						if i := golemu.GetIndexOfTag(tags, t); i < 0 {
+						if i := tags.GetIndexOf(t); i < 0 {
 							tags = append(tags, t)
 							res = append(res, t)
 							// Write to file
@@ -445,7 +445,7 @@ func runServer() int {
 					}
 				case golemu.DeleteTags:
 					for _, t := range cmd.Tags {
-						if i := golemu.GetIndexOfTag(tags, t); i >= 0 {
+						if i := tags.GetIndexOf(t); i >= 0 {
 							tags = append(tags[:i], tags[i+1:]...)
 							res = append(res, t)
 							// Write to file
