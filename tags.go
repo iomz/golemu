@@ -45,7 +45,7 @@ func (tags Tags) BuildTagReportDataStack(pdu int) TagReportDataStack {
 	return trds
 }
 
-// GetIndexOfTag find the index in []*Tag
+// GetIndexOf finds the index in []*Tag
 func (tags Tags) GetIndexOf(t *Tag) int {
 	index := 0
 	for _, tag := range tags {

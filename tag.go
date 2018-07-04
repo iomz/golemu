@@ -24,7 +24,7 @@ type Tag struct {
 	EPC    []byte
 }
 
-// Take one Tag struct and build TagReportData parameter payload in []byte
+// BuildTagReportDataParameter takes one Tag struct and build TagReportData parameter payload in []byte
 func (tag *Tag) BuildTagReportDataParameter() []byte {
 	// EPCData
 	// Calculate the right length fro, epc and pcbits
@@ -49,12 +49,12 @@ func (tag *Tag) MarshalBinary() (_ []byte, err error) {
 }
 
 // UnmarshalBinary overwrites the unmarshaller in gob decoding *Tag
-func (t *Tag) UnmarshalBinary(data []byte) (err error) {
+func (tag *Tag) UnmarshalBinary(data []byte) (err error) {
 	dec := gob.NewDecoder(bytes.NewReader(data))
-	if err = dec.Decode(&t.PCBits); err != nil {
+	if err = dec.Decode(&tag.PCBits); err != nil {
 		return
 	}
-	if err = dec.Decode(&t.EPC); err != nil {
+	if err = dec.Decode(&tag.EPC); err != nil {
 		return
 	}
 	return
@@ -62,8 +62,8 @@ func (t *Tag) UnmarshalBinary(data []byte) (err error) {
 
 // IsEqual to another Tag by taking one as its argument
 // return true if they are the same
-func (t *Tag) IsEqual(tt *Tag) bool {
-	if t.PCBits == tt.PCBits && bytes.Equal(t.EPC, tt.EPC) {
+func (tag *Tag) IsEqual(tt *Tag) bool {
+	if tag.PCBits == tt.PCBits && bytes.Equal(tag.EPC, tt.EPC) {
 		return true
 	}
 	return false
@@ -71,18 +71,18 @@ func (t *Tag) IsEqual(tt *Tag) bool {
 
 // IsDuplicate to test another Tag by comparing only EPC
 // return true if the EPCs are the same
-func (t *Tag) IsDuplicate(tt *Tag) bool {
-	if bytes.Equal(t.EPC, tt.EPC) {
+func (tag *Tag) IsDuplicate(tt *Tag) bool {
+	if bytes.Equal(tag.EPC, tt.EPC) {
 		return true
 	}
 	return false
 }
 
-// InString returns Tag structs in TagInString structs
-func (t *Tag) ToTagRecord() *TagRecord {
+// ToTagRecord returns a pointer to TagRecord struct of the tag
+func (tag *Tag) ToTagRecord() *TagRecord {
 	return &TagRecord{
-		PCBits: strconv.FormatUint(uint64(t.PCBits), 16),
-		EPC:    hex.EncodeToString(t.EPC),
+		PCBits: strconv.FormatUint(uint64(tag.PCBits), 16),
+		EPC:    hex.EncodeToString(tag.EPC),
 	}
 }
 

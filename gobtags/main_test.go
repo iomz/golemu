@@ -78,8 +78,8 @@ func Test_readTagsFromCSV(t *testing.T) {
 			"2 tags",
 			args{os.Getenv("GOPATH") + "/src/github.com/iomz/golemu/testdata/tags.csv"},
 			golemu.Tags{
-				&golemu.Tag{8610, []byte{203, 84, 216, 81, 46, 49, 227, 24}},
-				&golemu.Tag{12288, []byte{52, 112, 249, 106, 163, 0, 0, 0, 0, 0, 1, 54}},
+				&golemu.Tag{PCBits: 8610, EPC: []byte{203, 84, 216, 81, 46, 49, 227, 24}},
+				&golemu.Tag{PCBits: 12288, EPC: []byte{52, 112, 249, 106, 163, 0, 0, 0, 0, 0, 1, 54}},
 			},
 		},
 	}

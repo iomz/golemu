@@ -61,7 +61,10 @@ func readTagsFromCSV(inputFile string) *golemu.Tags {
 			panic(err)
 		}
 		if len(record) == 2 {
-			tagRecord := &golemu.TagRecord{record[0], record[1]} // PCbits, EPC
+			tagRecord := &golemu.TagRecord{
+				PCBits: record[0],
+				EPC:    record[1],
+			} // PCbits, EPC
 			tag, err := golemu.NewTag(tagRecord)
 			if err != nil {
 				continue
