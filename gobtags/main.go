@@ -79,5 +79,19 @@ func main() {
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 	tags := readTagsFromCSV(*inFile)
 	binutil.Save(*outFile, tags)
+	/*
+		var tagBuf bytes.Buffer
+		enc := gob.NewEncoder(&tagBuf)
+		err := enc.Encode(tags)
+		if err != nil {
+			log.Fatal(err)
+		}
+		file, err := os.Create(*outFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		file.Write(tagBuf.Bytes())
+		file.Close()
+	*/
 	log.Printf("Saved %v tags in %v\n", len(*tags), *outFile)
 }
