@@ -26,7 +26,7 @@ func (tags Tags) BuildTagReportDataStack(pdu int) TagReportDataStack {
 		// or maximum PDU=int(^uint(0)>>1)
 		param = tag.BuildTagReportDataParameter()
 		if len(trds) != 0 &&
-			(10+len(trds[si].Parameter)+4+len(param) >= pdu || int(^uint(0)>>1) > pdu) {
+			(10+len(trds[si].Parameter)+4+len(param) >= pdu && int(^uint(0)>>1) > pdu) {
 			trd = &TagReportData{Parameter: param, TagCount: 1}
 			trds = append(trds, trd)
 			si++
