@@ -21,7 +21,7 @@ var (
 	// kingpin app
 	app     = kingpin.New("gobtags", "Read pcbits and ids from csv and save them in a gob file.")
 	inFile  = app.Flag("in", "A source csv file contains tags.").Short('i').Default("tags.csv").String()
-	outFile = app.Flag("out", "A destination gob file contains tags.").Short('o').Default("tags.gob").String()
+	outFile = app.Arg("out", "A destination gob file contains tags.").Required().String()
 )
 
 func makeByteID(s string) ([]byte, error) {
