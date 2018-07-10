@@ -52,7 +52,7 @@ var (
 	// kingpin server command
 	server = app.Command("server", "Run as a tag stream server.")
 	// kingpin report interval
-	reportInterval = server.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("1000").Int()
+	reportInterval = server.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("10000").Int()
 	// kingpin web port
 	webPort = server.Flag("webPort", "Port listening for web access.").Short('w').Default("3000").Int()
 	// kingpin Protocol Data Unit for LLRP
