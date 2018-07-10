@@ -25,6 +25,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
+	"github.com/iomz/go-llrp/binutil"
 	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -396,27 +397,16 @@ func runServer() int {
 	// Read virtual tags from a csv file
 	log.Printf("loading virtual Tags from \"%v\"", *file)
 
+	var tags llrp.Tags
 	if _, err := os.Stat(*file); os.IsNotExist(err) {
-		_, err := os.Create(*file)
+		log.Printf("%v doesn't exist, couldn't load tags", *file)
+	} else {
+		err := binutil.Load(*file, &tags)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
-		log.Printf("%v created.", *file)
+		log.Printf("%v tags loaded from %v", len(tags), *file)
 	}
-
-	// Prepare the tags
-	/*
-		tags := new([]*Tag)
-		if _, err := os.Stat("tags.gob"); os.IsNotExist(err) {
-			tags = loadTagsFromCSV(*file)
-			binutil.Save("tags.gob", tags)
-		} else {
-			if err := binutil.Load("tags.gob", tags); err != nil {
-				panic(err)
-			}
-		}
-	*/
-	tags := llrp.LoadTagsFromCSV(*file)
 
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
@@ -495,7 +485,7 @@ func runServer() int {
 		// Accept an incoming connection.
 		conn, err := l.Accept()
 		if err != nil {
-			log.Panic(err)
+			log.Fatal(err)
 		}
 		log.Println("LLRP connection initiated")
 
