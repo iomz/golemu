@@ -25,7 +25,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
-	"github.com/iomz/golemu"
 	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -72,17 +71,35 @@ var (
 	// Current activeClients
 	activeClients = make(map[WebsockConn]int) // map containing clients
 	// Tag management channel
-	tagManagerChannel = make(chan golemu.TagManager)
+	tagManagerChannel = make(chan TagManager)
 	// notify tag update channel
 	notify = make(chan bool)
 	// update TagReportDataStack when tag is updated
-	tagUpdated = make(chan golemu.Tags)
+	tagUpdated = make(chan llrp.Tags)
+)
+
+// TagManager is a struct for tag management channel
+type TagManager struct {
+	Action ManagementAction
+	Tags   llrp.Tags
+}
+
+// ManagementAction is a type for TagManager
+type ManagementAction int
+
+const (
+	// RetrieveTags is a const for retrieving tags
+	RetrieveTags ManagementAction = iota
+	// AddTags is a const for adding tags
+	AddTags
+	// DeleteTags is a const for deleting tags
+	DeleteTags
 )
 
 // WebsocketMessage to unmarshal JSON message from web clients
 type WebsocketMessage struct {
 	UpdateType string
-	Tag        golemu.TagRecord
+	Tag        llrp.TagRecord
 	Tags       []map[string]interface{}
 }
 
@@ -94,7 +111,7 @@ type WebsockConn struct {
 
 // APIPostTag redirects the tag addition request
 func APIPostTag(c *gin.Context) {
-	var json []golemu.TagRecord
+	var json []llrp.TagRecord
 	c.BindWith(&json, binding.JSON)
 	if res := ReqAddTag("add", json); res == "error" {
 		c.String(http.StatusAlreadyReported, "The tag already exists!\n")
@@ -105,7 +122,7 @@ func APIPostTag(c *gin.Context) {
 
 // APIDeleteTag redirects the tag deletion request
 func APIDeleteTag(c *gin.Context) {
-	var json []golemu.TagRecord
+	var json []llrp.TagRecord
 	c.BindWith(&json, binding.JSON)
 	if res := ReqDeleteTag("delete", json); res == "error" {
 		c.String(http.StatusNoContent, "The tag doesn't exist!\n")
@@ -126,11 +143,11 @@ func Broadcast(clientMessage []byte) {
 }
 
 // ReqAddTag handles a tag addition request
-func ReqAddTag(ut string, req []golemu.TagRecord) string {
+func ReqAddTag(ut string, req []llrp.TagRecord) string {
 	// TODO: success/fail notification per tag
 	failed := false
 	for _, t := range req {
-		tag, err := golemu.NewTag(&golemu.TagRecord{
+		tag, err := llrp.NewTag(&llrp.TagRecord{
 			PCBits: t.PCBits,
 			EPC:    t.EPC,
 		})
@@ -138,9 +155,9 @@ func ReqAddTag(ut string, req []golemu.TagRecord) string {
 			log.Fatal(err)
 		}
 
-		add := golemu.TagManager{
-			Action: golemu.AddTags,
-			Tags:   []*golemu.Tag{tag},
+		add := TagManager{
+			Action: AddTags,
+			Tags:   []*llrp.Tag{tag},
 		}
 		tagManagerChannel <- add
 
@@ -168,11 +185,11 @@ func ReqAddTag(ut string, req []golemu.TagRecord) string {
 }
 
 // ReqDeleteTag handles a tag deletion request
-func ReqDeleteTag(ut string, req []golemu.TagRecord) string {
+func ReqDeleteTag(ut string, req []llrp.TagRecord) string {
 	// TODO: success/fail notification per tag
 	failed := false
 	for _, t := range req {
-		tag, err := golemu.NewTag(&golemu.TagRecord{
+		tag, err := llrp.NewTag(&llrp.TagRecord{
 			PCBits: t.PCBits,
 			EPC:    t.EPC,
 		})
@@ -180,9 +197,9 @@ func ReqDeleteTag(ut string, req []golemu.TagRecord) string {
 			panic(err)
 		}
 
-		delete := golemu.TagManager{
-			Action: golemu.DeleteTags,
-			Tags:   []*golemu.Tag{tag},
+		delete := TagManager{
+			Action: DeleteTags,
+			Tags:   []*llrp.Tag{tag},
 		}
 		tagManagerChannel <- delete
 
@@ -210,15 +227,15 @@ func ReqDeleteTag(ut string, req []golemu.TagRecord) string {
 
 // ReqRetrieveTag handles a tag retrieval request
 func ReqRetrieveTag() []map[string]interface{} {
-	retrieve := golemu.TagManager{
-		Action: golemu.RetrieveTags,
-		Tags:   []*golemu.Tag{},
+	retrieve := TagManager{
+		Action: RetrieveTags,
+		Tags:   []*llrp.Tag{},
 	}
 	tagManagerChannel <- retrieve
 	retrieve = <-tagManagerChannel
 	var tagList []map[string]interface{}
 	for _, tag := range retrieve.Tags {
-		t := structs.Map(tag.ToTagRecord())
+		t := structs.Map(llrp.NewTagRecord(*tag))
 		tagList = append(tagList, t)
 	}
 	log.Printf("retrieve: %v", tagList)
@@ -270,14 +287,14 @@ func SockServer(ws *websocket.Conn) {
 		// TODO: separate actions into functions
 		switch m.UpdateType {
 		case "add":
-			m.UpdateType = ReqAddTag(m.UpdateType, []golemu.TagRecord{m.Tag})
+			m.UpdateType = ReqAddTag(m.UpdateType, []llrp.TagRecord{m.Tag})
 		case "delete":
-			m.UpdateType = ReqDeleteTag(m.UpdateType, []golemu.TagRecord{m.Tag})
+			m.UpdateType = ReqDeleteTag(m.UpdateType, []llrp.TagRecord{m.Tag})
 		case "retrieve":
 			tagList := ReqRetrieveTag()
 			m = WebsocketMessage{
 				UpdateType: "retrieval",
-				Tag:        golemu.TagRecord{},
+				Tag:        llrp.TagRecord{},
 				Tags:       tagList}
 			clientMessage, err = json.Marshal(m)
 			if err != nil {
@@ -291,7 +308,7 @@ func SockServer(ws *websocket.Conn) {
 }
 
 // Handles incoming requests.
-func handleRequest(conn net.Conn, tags golemu.Tags) {
+func handleRequest(conn net.Conn, tags llrp.Tags) {
 	// Make a buffer to hold incoming data.
 	buf := make([]byte, *pdu)
 	trds := tags.BuildTagReportDataStack(*pdu)
@@ -336,10 +353,15 @@ func handleRequest(conn net.Conn, tags golemu.Tags) {
 					// ROAccessReport interval tick
 					case <-roarTicker.C:
 						log.Printf("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
-						err := golemu.SendROAccessReport(conn, trds, &messageID)
-						if err != nil {
-							log.Print(err)
-							isLLRPConnAlive = false
+						for _, trd := range trds {
+							roar := llrp.NewROAccessReport(trd.Data, messageID)
+							err := roar.Send(conn)
+							messageID++
+							if err != nil {
+								log.Print(err)
+								isLLRPConnAlive = false
+								break
+							}
 						}
 					// Keepalive interval tick
 					case <-keepaliveTicker.C:
@@ -394,7 +416,7 @@ func runServer() int {
 			}
 		}
 	*/
-	tags := golemu.LoadTagsFromCSV(*file)
+	tags := llrp.LoadTagsFromCSV(*file)
 
 	// Listen for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
@@ -413,7 +435,7 @@ func runServer() int {
 	// Handle websocket and static file hosting with gin
 	go func() {
 		r := gin.Default()
-		r.Use(static.Serve("/", static.LocalFile("./public", true)))
+		r.Use(static.Serve("/", static.LocalFile(os.Getenv("GOPATH")+"/src/github.com/iomz/golemu/web", true)))
 		r.GET("/ws", func(c *gin.Context) {
 			handler := websocket.Handler(SockServer)
 			handler.ServeHTTP(c.Writer, c.Request)
@@ -429,9 +451,9 @@ func runServer() int {
 			select {
 			case cmd := <-tagManagerChannel:
 				// Tag management
-				res := []*golemu.Tag{}
+				res := []*llrp.Tag{}
 				switch cmd.Action {
-				case golemu.AddTags:
+				case AddTags:
 					for _, t := range cmd.Tags {
 						if i := tags.GetIndexOf(t); i < 0 {
 							tags = append(tags, t)
@@ -443,7 +465,7 @@ func runServer() int {
 							}
 						}
 					}
-				case golemu.DeleteTags:
+				case DeleteTags:
 					for _, t := range cmd.Tags {
 						if i := tags.GetIndexOf(t); i >= 0 {
 							tags = append(tags[:i], tags[i+1:]...)
@@ -455,7 +477,7 @@ func runServer() int {
 							}
 						}
 					}
-				case golemu.RetrieveTags:
+				case RetrieveTags:
 					res = tags
 				}
 				cmd.Tags = res
@@ -531,7 +553,8 @@ func runClient() int {
 			message := make([]byte, l-6)
 			_, err = io.ReadFull(conn, message)
 			log.Println(">>> RO_ACCESS_REPORT")
-			golemu.DecapsulateROAccessReport(l, message)
+			res := llrp.UnmarshalROAccessReportBody(message)
+			log.Printf("%v events received", len(res))
 		} else {
 			log.Fatalf("Unknown header: %v", h)
 		}

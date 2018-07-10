@@ -3,6 +3,5 @@
 *.json
 *.old
 *.swp
-public/*
-public/vendor/*
-scenario*
+web/*
+web/vendor/*
