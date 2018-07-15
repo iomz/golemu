@@ -8,14 +8,19 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -34,34 +39,28 @@ var (
 	// Current Version
 	version = "0.1.0"
 
-	// kingpin app
-	app = kingpin.New("golemu", "A mock LLRP-based logical reader emulator for RFID Tags.")
-	// kingpin debug mode flag
-	debug = app.Flag("debug", "Enable debug mode.").Short('v').Default("false").Bool()
-	// kingpin initial MessageID
-	initialMessageID = app.Flag("initialMessageID", "The initial messageID to start from.").Default("1000").Int()
-	// kingpin initial KeepaliveID
+	// app
+	app                = kingpin.New("golemu", "A mock LLRP-based logical reader emulator for RFID Tags.")
+	debug              = app.Flag("debug", "Enable debug mode.").Short('v').Default("false").Bool()
+	initialMessageID   = app.Flag("initialMessageID", "The initial messageID to start from.").Default("1000").Int()
 	initialKeepaliveID = app.Flag("initialKeepaliveID", "The initial keepaliveID to start from.").Default("80000").Int()
-	// kingpin LLRP listening IP address
-	ip = app.Flag("ip", "LLRP listening address.").Short('a').Default("0.0.0.0").IP()
-	// kingpin keepalive interval
-	keepaliveInterval = app.Flag("keepalive", "LLRP Keepalive interval.").Short('k').Default("0").Int()
-	// kingpin LLRP listening port
-	port = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
+	ip                 = app.Flag("ip", "LLRP listening address.").Short('a').Default("0.0.0.0").IP()
+	keepaliveInterval  = app.Flag("keepalive", "LLRP Keepalive interval.").Short('k').Default("0").Int()
+	port               = app.Flag("port", "LLRP listening port.").Short('p').Default("5084").Int()
+	pdu                = app.Flag("pdu", "The maximum size of LLRP PDU.").Short('m').Default("1500").Int()
+	reportInterval     = app.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("10000").Int()
 
-	// kingpin server command
-	server = app.Command("server", "Run as a tag stream server.")
-	// kingpin report interval
-	reportInterval = server.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("10000").Int()
-	// kingpin web port
+	// server mode
+	server  = app.Command("server", "Run as an LLRP tag stream server.")
 	webPort = server.Flag("webPort", "Port listening for web access.").Short('w').Default("3000").Int()
-	// kingpin Protocol Data Unit for LLRP
-	pdu = server.Flag("pdu", "The maximum size of LLRP PDU.").Short('m').Default("1500").Int()
-	// kingpin tag list file
-	file = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
+	file    = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
 
-	// kingpin client command
-	client = app.Command("client", "Run as a client mode.")
+	// client mode
+	client = app.Command("client", "Run as an LLRP client.")
+
+	// simulator mode
+	simulate      = app.Command("simulate", "Run in the simulator mode.")
+	simulationDir = simulate.Arg("simulationDir", "The directory contains tags for each event cycle.").Required().String()
 
 	// LLRPConn flag
 	isLLRPConnAlive = false
@@ -551,6 +550,141 @@ func runClient() int {
 	}
 }
 
+func loadTagsForNextEventCycle(simulationFiles []string, eventCycle int) (llrp.Tags, error) {
+	tags := llrp.Tags{}
+	if len(simulationFiles) <= eventCycle {
+		return tags, fmt.Errorf("no more event cycle found in %s", *simulationDir)
+	}
+	err := binutil.Load(simulationFiles[eventCycle], &tags)
+	if err != nil {
+		return tags, err
+	}
+	return tags, nil
+}
+
+// simulator mode
+func runSimulation() {
+	// read simulation dir and prepare the file list
+	dir, err := filepath.Abs(*simulationDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	files, err := ioutil.ReadDir(dir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	simulationFiles := []string{}
+	for _, f := range files {
+		if strings.HasSuffix(f.Name(), ".gob") {
+			simulationFiles = append(simulationFiles, path.Join(dir, f.Name()))
+		}
+	}
+	if len(simulationFiles) == 0 {
+		log.Fatalf("no event cycle file found in %s", *simulationDir)
+	}
+
+	// start listening for incoming connections.
+	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
+	if err != nil {
+		panic(err)
+	}
+	defer l.Close()
+	log.Printf("listening on %v:%v", ip, *port)
+
+	// channel for communicating virtual tag updates and signals
+	signals := make(chan os.Signal)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	// handle LLRP connection
+	log.Println("waiting for LLRP connection...")
+	conn, err := l.Accept()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("initiated LLRP connection with %v", conn.RemoteAddr())
+
+	// Send back READER_EVENT_NOTIFICATION
+	currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+	conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
+	log.Println("<<< READER_EVENT_NOTIFICATION")
+	messageID++
+
+	// simulate event cycles from 0
+	eventCycle := 0
+
+	// initialize the first event cycle and roarTicker
+	tags, err := loadTagsForNextEventCycle(simulationFiles, eventCycle)
+	if err != nil {
+		log.Fatal(err)
+	}
+	eventCycle++
+	trds := tags.BuildTagReportDataStack(*pdu)
+	roarTicker := time.NewTicker(time.Duration(*reportInterval) * time.Millisecond)
+
+	// prepare LLRP header storage
+	header := make([]byte, 2)
+	length := make([]byte, 4)
+	receivedMessageID := make([]byte, 4)
+	for {
+		_, err = io.ReadFull(conn, header)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = io.ReadFull(conn, length)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = io.ReadFull(conn, receivedMessageID)
+		if err != nil {
+			log.Fatal(err)
+		}
+		var messageValue []byte
+		if messageSize := binary.BigEndian.Uint32(length) - 10; messageSize != 0 {
+			messageValue = make([]byte, binary.BigEndian.Uint32(length)-10)
+			_, err = io.ReadFull(conn, messageValue)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
+		h := binary.BigEndian.Uint16(header)
+		switch h {
+		case llrp.SetReaderConfigHeader:
+			log.Println(">>> SET_READER_CONFIG")
+			conn.Write(llrp.SetReaderConfigResponse())
+			go func() {
+				for {
+					_, ok := <-roarTicker.C
+					if !ok {
+						log.Fatalln("roarTicker died")
+					}
+					log.Printf("<<< Simulated Event Cycle %v, %v tags", eventCycle, len(tags))
+					for _, trd := range trds {
+						roar := llrp.NewROAccessReport(trd.Data, messageID)
+						err := roar.Send(conn)
+						if err != nil {
+							log.Fatal(err)
+						}
+						messageID++
+					}
+					// prepare for the next event cycle
+					tags, err = loadTagsForNextEventCycle(simulationFiles, eventCycle)
+					if err != nil {
+						log.Fatal(err)
+					}
+					eventCycle++
+					trds = tags.BuildTagReportDataStack(*pdu)
+				}
+			}()
+		case llrp.KeepaliveAckHeader:
+			log.Println(">>> KEEP_ALIVE_ACK")
+		default:
+			// unknown LLRP packet received, reset the connection
+			log.Printf(">>> header: %v", h)
+		}
+	}
+}
+
 func main() {
 	app.Version(version)
 	parse := kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -568,5 +702,7 @@ func main() {
 		os.Exit(runServer())
 	case client.FullCommand():
 		os.Exit(runClient())
+	case simulate.FullCommand():
+		runSimulation()
 	}
 }

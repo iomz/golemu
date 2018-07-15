@@ -3,5 +3,6 @@
 *.json
 *.old
 *.swp
+sim/*
 web/*
 web/vendor/*
