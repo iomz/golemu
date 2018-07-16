@@ -335,6 +335,7 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 				// SRC received, start ROAR
 				log.Println(">>> SET_READER_CONFIG")
 				conn.Write(llrp.SetReaderConfigResponse())
+				log.Println("<<< SET_READER_CONFIG_RESPONSE")
 			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
 				log.Println(">>> KEEP_ALIVE_ACK")
@@ -650,7 +651,6 @@ func runSimulation() {
 		h := binary.BigEndian.Uint16(header)
 		switch h {
 		case llrp.SetReaderConfigHeader:
-			log.Println(">>> SET_READER_CONFIG")
 			conn.Write(llrp.SetReaderConfigResponse())
 			go func() {
 				for {
@@ -676,8 +676,6 @@ func runSimulation() {
 					trds = tags.BuildTagReportDataStack(*pdu)
 				}
 			}()
-		case llrp.KeepaliveAckHeader:
-			log.Println(">>> KEEP_ALIVE_ACK")
 		default:
 			// unknown LLRP packet received, reset the connection
 			log.Printf(">>> header: %v", h)
