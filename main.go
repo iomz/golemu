@@ -8,7 +8,6 @@ package main
 import (
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -551,12 +550,15 @@ func runClient() int {
 	}
 }
 
-func loadTagsForNextEventCycle(simulationFiles []string, eventCycle int) (llrp.Tags, error) {
+func loadTagsForNextEventCycle(simulationFiles []string, eventCycle *int) (llrp.Tags, error) {
 	tags := llrp.Tags{}
-	if len(simulationFiles) <= eventCycle {
-		return tags, fmt.Errorf("no more event cycle found in %s", *simulationDir)
+	if len(simulationFiles) <= *eventCycle {
+		//log.Printf("Total iteration: %v, current event cycle: %v", len(simulationFiles), eventCycle)
+		//return tags, fmt.Errorf("no more event cycle found in %s", *simulationDir)
+		log.Printf("Resetting event cycle from %v to 0", *eventCycle)
+		*eventCycle = 0
 	}
-	err := binutil.Load(simulationFiles[eventCycle], &tags)
+	err := binutil.Load(simulationFiles[*eventCycle], &tags)
 	if err != nil {
 		return tags, err
 	}
@@ -595,6 +597,14 @@ func runSimulation() {
 	// channel for communicating virtual tag updates and signals
 	signals := make(chan os.Signal)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		for {
+			select {
+			case signal := <-signals:
+				log.Fatal(signal)
+			}
+		}
+	}()
 
 	// handle LLRP connection
 	log.Println("waiting for LLRP connection...")
@@ -614,7 +624,7 @@ func runSimulation() {
 	eventCycle := 0
 
 	// initialize the first event cycle and roarTicker
-	tags, err := loadTagsForNextEventCycle(simulationFiles, eventCycle)
+	tags, err := loadTagsForNextEventCycle(simulationFiles, &eventCycle)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -658,7 +668,7 @@ func runSimulation() {
 					if !ok {
 						log.Fatalln("roarTicker died")
 					}
-					log.Printf("<<< Simulated Event Cycle %v, %v tags", eventCycle, len(tags))
+					log.Printf("<<< Simulated Event Cycle %v, %v tags, %v roars", eventCycle, len(tags), len(trds))
 					for _, trd := range trds {
 						roar := llrp.NewROAccessReport(trd.Data, messageID)
 						err := roar.Send(conn)
@@ -668,7 +678,7 @@ func runSimulation() {
 						messageID++
 					}
 					// prepare for the next event cycle
-					tags, err = loadTagsForNextEventCycle(simulationFiles, eventCycle)
+					tags, err = loadTagsForNextEventCycle(simulationFiles, &eventCycle)
 					if err != nil {
 						log.Fatal(err)
 					}
