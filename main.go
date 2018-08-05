@@ -625,11 +625,10 @@ func runSimulation() {
 
 	// initialize the first event cycle and roarTicker
 	tags, err := loadTagsForNextEventCycle(simulationFiles, &eventCycle)
-	eventCycle++
 	if err != nil {
-		log.Print(err)
-		continue
+		log.Fatal(err)
 	}
+	eventCycle++
 	trds := tags.BuildTagReportDataStack(*pdu)
 	roarTicker := time.NewTicker(time.Duration(*reportInterval) * time.Millisecond)
 
@@ -680,10 +679,11 @@ func runSimulation() {
 					}
 					// prepare for the next event cycle
 					tags, err = loadTagsForNextEventCycle(simulationFiles, &eventCycle)
-					if err != nil {
-						log.Fatal(err)
-					}
 					eventCycle++
+					if err != nil {
+						log.Print(err)
+						continue
+					}
 					trds = tags.BuildTagReportDataStack(*pdu)
 				}
 			}()
