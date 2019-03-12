@@ -29,6 +29,10 @@
   version = "v1.1.0"
 
 [[projects]]
+<<<<<<< HEAD
+=======
+  branch = "master"
+>>>>>>> e9ea646dda903ba07963b1585431778400c76e69
   digest = "1:36fe9527deed01d2a317617e59304eb2c4ce9f8a24115bcc5c2e37b3aee5bae4"
   name = "github.com/gin-contrib/sse"
   packages = ["."]
@@ -41,7 +45,11 @@
   name = "github.com/gin-gonic/contrib"
   packages = ["static"]
   pruneopts = "UT"
+<<<<<<< HEAD
   revision = "54ff787f7c73aec36275e1384c705389b1772ba9"
+=======
+  revision = "54170a7b0b4b2f9219c79599b1b03830a5a7d68d"
+>>>>>>> e9ea646dda903ba07963b1585431778400c76e69
 
 [[projects]]
   digest = "1:d5083934eb25e45d17f72ffa86cae3814f4a9d6c073c4f16b64147169b245606"
