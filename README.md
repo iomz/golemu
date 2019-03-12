@@ -17,7 +17,7 @@ Install & Synopsis
 --
 
 ```
-$ go get github.com/iomz/golemu
+$ go get -u github.com/iomz/golemu
 $ golemu --help
 
 usage: golemu [<flags>] <command> [<args> ...]
