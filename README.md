@@ -14,8 +14,12 @@ You need to confirm the tag stream events in scenarios, but not really thrilled 
 
 ## Install & Synopsis
 
+Install [dep](https://github.com/golang/dep) in your system first.
+
 ```
-$ go get -u github.com/iomz/golemu
+$ go get github.com/iomz/golemu
+$ cd $GOPATH/src/github.com/iomz/golemu
+$ dep ensure
 $ golemu --help
 
 usage: golemu [<flags>] <command> [<args> ...]
