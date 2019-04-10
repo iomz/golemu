@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/fatih/structs"
-	//"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
@@ -303,7 +302,6 @@ func runServer() int {
 	// Handle /tags
 	go func() {
 		r := gin.Default()
-		//r.Use(static.Serve("/", static.LocalFile(os.Getenv("GOPATH")+"/src/github.com/iomz/golemu/web", true)))
 		v1 := r.Group("api/v1")
 		v1.POST("/tags", APIPostTag)
 		v1.DELETE("/tags", APIDeleteTag)
