@@ -38,8 +38,8 @@
   name = "github.com/iomz/go-llrp"
 
 [[constraint]]
-  name = "github.com/op/go-logging"
-  version = "1.0.0"
+  name = "github.com/sirupsen/logrus"
+  version = "1.4.1"
 
 [[constraint]]
   name = "gopkg.in/alecthomas/kingpin.v2"

@@ -1,4 +1,3 @@
-// Copyright (c) 2019 Iori Mizutani
 //
 // Use of this source code is governed by The MIT License
 // that can be found in the LICENSE file.
@@ -27,7 +26,7 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
 	"github.com/iomz/go-llrp/binutil"
-	"github.com/op/go-logging"
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -35,8 +34,8 @@ var (
 	// current Version
 	version = "0.1.1"
 
-	// go-logging
-	log = logging.MustGetLogger("golemu")
+	// logrus
+	//log = logging.MustGetLogger("golemu")
 
 	// app
 	app                = kingpin.New("golemu", "A mock LLRP-based logical reader emulator for RFID Tags.")
@@ -49,17 +48,17 @@ var (
 	pdu                = app.Flag("pdu", "The maximum size of LLRP PDU.").Short('m').Default("1500").Int()
 	reportInterval     = app.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("10000").Int()
 
-	// client mode
+	// Client mode
 	client = app.Command("client", "Run as an LLRP client; connect to an LLRP server and receive events (test-only).")
 
-	// server mode
+	// Server mode
 	server  = app.Command("server", "Run as an LLRP tag stream server.")
 	apiPort = server.Flag("apiPort", "The port for the API endpoint.").Default("3000").Int()
 	file    = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.gob").String()
 
-	// simulator mode
-	simulate      = app.Command("simulate", "Run in the simulator mode.")
-	simulationDir = simulate.Arg("simulationDir", "The directory contains tags for each event cycle.").Required().String()
+	// Simulator mode
+	simulator     = app.Command("simulator", "Run in the simulator mode.")
+	simulationDir = simulator.Arg("simulationDir", "The directory contains tags for each event cycle.").Required().String()
 
 	// LLRPConn flag
 	isLLRPConnAlive = false
@@ -136,10 +135,10 @@ func ReqAddTag(ut string, req []llrp.TagRecord) string {
 	}
 
 	if failed {
-		log.Errorf("failed %v %v", ut, req)
+		log.Warnf("failed %v %v", ut, req)
 		return "error"
 	}
-	log.Infof("%v %v", ut, req)
+	log.Debugf("%v %v", ut, req)
 	return ut
 }
 
@@ -163,10 +162,10 @@ func ReqDeleteTag(ut string, req []llrp.TagRecord) string {
 		tagManagerChannel <- delete
 	}
 	if failed {
-		log.Errorf("failed %v %v", ut, req)
+		log.Warnf("failed %v %v", ut, req)
 		return "error"
 	}
-	log.Infof("%v %v", ut, req)
+	log.Debugf("%v %v", ut, req)
 	return ut
 }
 
@@ -183,7 +182,7 @@ func ReqRetrieveTag() []map[string]interface{} {
 		t := structs.Map(llrp.NewTagRecord(*tag))
 		tagList = append(tagList, t)
 	}
-	log.Infof("retrieve: %v", tagList)
+	log.Debugf("retrieve: %v", tagList)
 	return tagList
 }
 
@@ -212,14 +211,14 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 		if header == llrp.SetReaderConfigHeader || header == llrp.KeepaliveAckHeader {
 			if header == llrp.SetReaderConfigHeader {
 				// SRC received, start ROAR
-				log.Notice(">>> SET_READER_CONFIG")
+				log.Info(">>> SET_READER_CONFIG")
 				conn.Write(llrp.SetReaderConfigResponse(currentMessageID))
 				atomic.AddUint32(&currentMessageID, 1)
 				runtime.Gosched()
-				log.Notice("<<< SET_READER_CONFIG_RESPONSE")
+				log.Info("<<< SET_READER_CONFIG_RESPONSE")
 			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
-				log.Notice(">>> KEEP_ALIVE_ACK")
+				log.Info(">>> KEEP_ALIVE_ACK")
 			}
 
 			// Tick ROAR and Keepalive interval
@@ -230,13 +229,16 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 			}
 			go func() {
 				// Initial ROAR message
-				log.Noticef("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
+				log.WithFields(log.Fields{
+					"Reports":    len(trds),
+					"Total tags": trds.TotalTagCounts(),
+				}).Info("<<< RO_ACCESS_REPORT")
 				for _, trd := range trds {
 					roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
 					err := roar.Send(conn)
 					currentMessageID++
 					if err != nil {
-						log.Error(err)
+						log.Warn(err)
 						isLLRPConnAlive = false
 						break
 					}
@@ -247,7 +249,10 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 					select {
 					// ROAccessReport interval tick
 					case <-roarTicker.C:
-						log.Noticef("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
+						log.WithFields(log.Fields{
+							"Reports":    len(trds),
+							"Total tags": trds.TotalTagCounts(),
+						}).Info("<<< RO_ACCESS_REPORT")
 						for _, trd := range trds {
 							roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
 							err := roar.Send(conn)
@@ -255,14 +260,14 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 							runtime.Gosched()
 							time.Sleep(time.Millisecond)
 							if err != nil {
-								log.Error(err)
+								log.Warn(err)
 								isLLRPConnAlive = false
 								break
 							}
 						}
 					// Keepalive interval tick
 					case <-keepaliveTicker.C:
-						log.Notice("<<< KEEP_ALIVE")
+						log.Info("<<< KEEP_ALIVE")
 						conn.Write(llrp.Keepalive(currentMessageID))
 						atomic.AddUint32(&currentMessageID, 1)
 						runtime.Gosched()
@@ -284,7 +289,7 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 			}()
 		} else {
 			// Unknown LLRP packet received, reset the connection
-			log.Warningf("unknown header: %v, reqlen: %v", header, reqLen)
+			log.Warnf("unknown header: %v, reqlen: %v", header, reqLen)
 			log.Debugf("message: %v", buf)
 			return
 		}
@@ -294,18 +299,19 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 // Server mode
 func runServer() int {
 	// Read virtual tags from a csv file
-	log.Infof("loading virtual Tags from \"%v\"", *file)
+	log.WithFields(log.Fields{
+		"File": *file,
+	}).Info("loading tags")
 
 	var tags llrp.Tags
 	if _, err := os.Stat(*file); os.IsNotExist(err) {
-		log.Warningf("%v doesn't exist, couldn't load tags", *file)
+		log.Warnf("%v doesn't exist, couldn't load tags", *file)
 	} else {
 		err := binutil.Load(*file, &tags)
 		if err != nil {
-			log.Critical(err)
-			os.Exit(1)
+			log.Error(err)
 		}
-		log.Infof("%v tags loaded from %v", len(tags), *file)
+		log.Infof("%v tags loaded", len(tags))
 	}
 
 	// Listen for incoming connections.
@@ -369,8 +375,7 @@ func runServer() int {
 				tagManagerChannel <- cmd
 			case signal := <-signals:
 				// Handle SIGINT and SIGTERM.
-				log.Criticalf("%v", signal)
-				os.Exit(1)
+				log.Fatalf("%v", signal)
 			}
 		}
 	}()
@@ -381,15 +386,14 @@ func runServer() int {
 		// Accept an incoming connection.
 		conn, err := l.Accept()
 		if err != nil {
-			log.Critical(err)
-			os.Exit(1)
+			log.Error(err)
 		}
 		log.Info("LLRP connection initiated")
 
 		// Send back READER_EVENT_NOTIFICATION
 		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
 		conn.Write(llrp.ReaderEventNotification(currentMessageID, currentTime))
-		log.Notice("<<< READER_EVENT_NOTIFICATION")
+		log.Info("<<< READER_EVENT_NOTIFICATION")
 		atomic.AddUint32(&currentMessageID, 1)
 		runtime.Gosched()
 		time.Sleep(time.Millisecond)
@@ -417,18 +421,15 @@ func runClient() int {
 	for {
 		_, err = io.ReadFull(conn, header)
 		if err != nil {
-			log.Critical(err)
-			os.Exit(1)
+			log.Error(err)
 		}
 		_, err = io.ReadFull(conn, length)
 		if err != nil {
-			log.Critical(err)
-			os.Exit(1)
+			log.Error(err)
 		}
 		_, err = io.ReadFull(conn, messageID)
 		if err != nil {
-			log.Critical(err)
-			os.Exit(1)
+			log.Error(err)
 		}
 		// `length` containts the size of the entire message in octets
 		// starting from bit offset 0, hence, the message size is
@@ -438,8 +439,7 @@ func runClient() int {
 			messageValue = make([]byte, binary.BigEndian.Uint32(length)-10)
 			_, err = io.ReadFull(conn, messageValue)
 			if err != nil {
-				log.Critical(err)
-				os.Exit(1)
+				log.Error(err)
 			}
 		}
 
@@ -447,19 +447,29 @@ func runClient() int {
 		mid := binary.BigEndian.Uint32(messageID)
 		switch h {
 		case llrp.ReaderEventNotificationHeader:
-			log.Noticef(">>> READER_EVENT_NOTIFICATION [Message ID: %d]", mid)
+			log.WithFields(log.Fields{
+				"Message ID": mid,
+			}).Info(">>> READER_EVENT_NOTIFICATION")
 			conn.Write(llrp.SetReaderConfig(mid + 1))
 		case llrp.KeepaliveHeader:
-			log.Noticef(">>> KEEP_ALIVE [Message ID: %d]", mid)
+			log.WithFields(log.Fields{
+				"Message ID": mid,
+			}).Info(">>> KEEP_ALIVE")
 			conn.Write(llrp.KeepaliveAck(mid + 1))
 		case llrp.SetReaderConfigResponseHeader:
-			log.Noticef(">>> SET_READER_CONFIG_RESPONSE [Message ID: %d]", mid)
+			log.WithFields(log.Fields{
+				"Message ID": mid,
+			}).Info(">>> SET_READER_CONFIG_RESPONSE")
 		case llrp.ROAccessReportHeader:
-			log.Noticef(">>> RO_ACCESS_REPORT [Message ID: %d]", mid)
 			res := llrp.UnmarshalROAccessReportBody(messageValue)
-			log.Noticef("%v events received", len(res))
+			log.WithFields(log.Fields{
+				"Message ID": mid,
+				"#Events":    len(res),
+			}).Info(">>> RO_ACCESS_REPORT")
 		default:
-			log.Warningf("Unknown header: %v, Message ID: %d", h, mid)
+			log.WithFields(log.Fields{
+				"Message ID": mid,
+			}).Warnf("Unknown header: %v", h)
 		}
 	}
 }
@@ -530,7 +540,7 @@ func runSimulation() {
 	// Send back READER_EVENT_NOTIFICATION
 	currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
 	conn.Write(llrp.ReaderEventNotification(currentMessageID, currentTime))
-	log.Notice("<<< READER_EVENT_NOTIFICATION")
+	log.Info("<<< READER_EVENT_NOTIFICATION")
 	atomic.AddUint32(&currentMessageID, 1)
 	runtime.Gosched()
 
@@ -584,16 +594,14 @@ func runSimulation() {
 				for {
 					_, ok := <-roarTicker.C
 					if !ok {
-						log.Critical("roarTicker died")
-						os.Exit(1)
+						log.Fatal("roarTicker died")
 					}
 					log.Infof("<<< Simulated Event Cycle %v, %v tags, %v roars", eventCycle, len(tags), len(trds))
 					for _, trd := range trds {
 						roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
 						err := roar.Send(conn)
 						if err != nil {
-							log.Critical(err)
-							os.Exit(1)
+							log.Error(err)
 						}
 						atomic.AddUint32(&currentMessageID, 1)
 						runtime.Gosched()
@@ -602,7 +610,7 @@ func runSimulation() {
 					tags, err = loadTagsForNextEventCycle(simulationFiles, &eventCycle)
 					eventCycle++
 					if err != nil {
-						log.Error(err)
+						log.Warn(err)
 						continue
 					}
 					trds = tags.BuildTagReportDataStack(*pdu)
@@ -610,7 +618,7 @@ func runSimulation() {
 			}()
 		default:
 			// Unknown LLRP packet received, reset the connection
-			log.Warningf(">>> header: %v", h)
+			log.Warnf(">>> header: %v", h)
 		}
 	}
 }
@@ -620,28 +628,21 @@ func main() {
 	app.Version(version)
 	parse := kingpin.MustParse(app.Parse(os.Args[1:]))
 
-	// Set up go-logging
-	logBackend := logging.NewLogBackend(os.Stderr, "", 0)
-	logFormat := logging.MustStringFormatter(
-		`%{color}%{time:15:04:05.000} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}`,
-	)
-	logBackendFormatter := logging.NewBackendFormatter(logBackend, logFormat)
-	logging.SetBackend(logBackendFormatter)
+	// Set up logrus
+	log.SetLevel(log.InfoLevel)
 
 	if *debug {
-		//loggo.ConfigureLoggers("TRACE")
 		gin.SetMode(gin.DebugMode)
 	} else {
-		//loggo.ConfigureLoggers("INFO")
 		gin.SetMode(gin.ReleaseMode)
 	}
 
 	switch parse {
-	case server.FullCommand():
-		os.Exit(runServer())
 	case client.FullCommand():
 		os.Exit(runClient())
-	case simulate.FullCommand():
+	case server.FullCommand():
+		os.Exit(runServer())
+	case simulator.FullCommand():
 		runSimulation()
 	}
 }
