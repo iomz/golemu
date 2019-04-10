@@ -46,13 +46,13 @@ var (
 	pdu                = app.Flag("pdu", "The maximum size of LLRP PDU.").Short('m').Default("1500").Int()
 	reportInterval     = app.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("10000").Int()
 
+	// client mode
+	client = app.Command("client", "Run as an LLRP client; connect to an LLRP server and receive events (test-only).")
+
 	// server mode
 	server  = app.Command("server", "Run as an LLRP tag stream server.")
 	apiPort = server.Flag("apiPort", "The port for the API endpoint.").Default("3000").Int()
 	file    = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.gob").String()
-
-	// client mode
-	client = app.Command("client", "Run as an LLRP client.")
 
 	// simulator mode
 	simulate      = app.Command("simulate", "Run in the simulator mode.")
@@ -377,48 +377,60 @@ func runServer() int {
 // client mode
 func runClient() int {
 	// Establish a connection to the llrp client
+	// sleep for 5 seconds if the host is not available and retry
+	log.Printf("waiting for %s:%d ...", ip.String(), *port)
 	conn, err := net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
-	if err != nil {
-		panic(err)
+	for err != nil {
+		time.Sleep(time.Second)
+		conn, err = net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
 	}
+	log.Printf("establised an LLRP connection with %v", conn.RemoteAddr())
 
 	header := make([]byte, 2)
 	length := make([]byte, 4)
+	messageID := make([]byte, 4)
 	for {
 		_, err = io.ReadFull(conn, header)
 		if err != nil {
 			log.Fatal(err)
 		}
-		//length := binary.BigEndian.Uint32(prefix)
+		_, err = io.ReadFull(conn, length)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = io.ReadFull(conn, messageID)
+		if err != nil {
+			log.Fatal(err)
+		}
+		// length containts the size of the entire message in octets
+		// starting from bit offset 0, hence, the message size is
+		// length - 10 bytes
+		var messageValue []byte
+		if messageSize := binary.BigEndian.Uint32(length) - 10; messageSize != 0 {
+			messageValue = make([]byte, binary.BigEndian.Uint32(length)-10)
+			_, err = io.ReadFull(conn, messageValue)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
 
 		h := binary.BigEndian.Uint16(header)
-		if h == llrp.ReaderEventNotificationHeader {
-			_, err = io.ReadFull(conn, length)
-			message := make([]byte, binary.BigEndian.Uint32(length)-6)
-			_, err = io.ReadFull(conn, message)
-			log.Println(">>> READER_EVENT_NOTIFICATION")
-			conn.Write(llrp.SetReaderConfig(messageID))
-		} else if h == llrp.KeepaliveHeader {
-			_, err = io.ReadFull(conn, length)
-			message := make([]byte, binary.BigEndian.Uint32(length)-6)
-			_, err = io.ReadFull(conn, message)
-			log.Println(">>> KEEP_ALIVE")
+		mid := binary.BigEndian.Uint32(messageID)
+		switch h {
+		case llrp.ReaderEventNotificationHeader:
+			log.Printf(">>> READER_EVENT_NOTIFICATION [Message ID: %d]", mid)
+			conn.Write(llrp.SetReaderConfig(mid + 1))
+		case llrp.KeepaliveHeader:
+			log.Printf(">>> KEEP_ALIVE [Message ID: %d]", mid)
 			conn.Write(llrp.KeepaliveAck())
-		} else if h == llrp.SetReaderConfigResponseHeader {
-			_, err = io.ReadFull(conn, length)
-			message := make([]byte, binary.BigEndian.Uint32(length)-6)
-			_, err = io.ReadFull(conn, message)
-			log.Println(">>> SET_READER_CONFIG_RESPONSE")
-		} else if h == llrp.ROAccessReportHeader {
-			_, err = io.ReadFull(conn, length)
-			l := binary.BigEndian.Uint32(length)
-			message := make([]byte, l-6)
-			_, err = io.ReadFull(conn, message)
-			log.Println(">>> RO_ACCESS_REPORT")
-			res := llrp.UnmarshalROAccessReportBody(message)
+		case llrp.SetReaderConfigResponseHeader:
+			log.Printf(">>> SET_READER_CONFIG_RESPONSE [Message ID: %d]", mid)
+		case llrp.ROAccessReportHeader:
+			log.Printf(">>> RO_ACCESS_REPORT [Message ID: %d]", mid)
+			res := llrp.UnmarshalROAccessReportBody(messageValue)
 			log.Printf("%v events received", len(res))
-		} else {
-			log.Fatalf("Unknown header: %v", h)
+		default:
+			log.Fatalf("Unknown header: %v, Message ID: %d", h, mid)
 		}
 	}
 }
