@@ -1,4 +1,4 @@
-// Copyright (c) 2018 Iori Mizutani
+// Copyright (c) 2019 Iori Mizutani
 //
 // Use of this source code is governed by The MIT License
 // that can be found in the LICENSE file.
@@ -7,10 +7,8 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"io"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -25,18 +23,20 @@ import (
 	"time"
 
 	"github.com/fatih/structs"
-	"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
 	"github.com/iomz/go-llrp/binutil"
-	"golang.org/x/net/websocket"
+	"github.com/op/go-logging"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
-	// Current Version
-	version = "0.1.0"
+	// current Version
+	version = "0.1.1"
+
+	// go-logging
+	log = logging.MustGetLogger("golemu")
 
 	// app
 	app                = kingpin.New("golemu", "A mock LLRP-based logical reader emulator for RFID Tags.")
@@ -49,13 +49,13 @@ var (
 	pdu                = app.Flag("pdu", "The maximum size of LLRP PDU.").Short('m').Default("1500").Int()
 	reportInterval     = app.Flag("reportInterval", "The interval of ROAccessReport in ms. Pseudo ROReport spec option.").Short('i').Default("10000").Int()
 
+	// client mode
+	client = app.Command("client", "Run as an LLRP client; connect to an LLRP server and receive events (test-only).")
+
 	// server mode
 	server  = app.Command("server", "Run as an LLRP tag stream server.")
-	webPort = server.Flag("webPort", "Port listening for web access.").Short('w').Default("3000").Int()
-	file    = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
-
-	// client mode
-	client = app.Command("client", "Run as an LLRP client.")
+	apiPort = server.Flag("apiPort", "The port for the API endpoint.").Default("3000").Int()
+	file    = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.gob").String()
 
 	// simulator mode
 	simulate      = app.Command("simulate", "Run in the simulator mode.")
@@ -64,11 +64,9 @@ var (
 	// LLRPConn flag
 	isLLRPConnAlive = false
 	// Current messageID
-	messageID = uint32(*initialMessageID)
+	currentMessageID = uint32(*initialMessageID)
 	// Current KeepaliveID
 	keepaliveID = *initialKeepaliveID
-	// Current activeClients
-	activeClients = make(map[WebsockConn]int) // map containing clients
 	// Tag management channel
 	tagManagerChannel = make(chan TagManager)
 	// notify tag update channel
@@ -95,19 +93,6 @@ const (
 	DeleteTags
 )
 
-// WebsocketMessage to unmarshal JSON message from web clients
-type WebsocketMessage struct {
-	UpdateType string
-	Tag        llrp.TagRecord
-	Tags       []map[string]interface{}
-}
-
-// WebsockConn holds connection consists of the websocket and the client ip
-type WebsockConn struct {
-	websocket *websocket.Conn
-	clientIP  string
-}
-
 // APIPostTag redirects the tag addition request
 func APIPostTag(c *gin.Context) {
 	var json []llrp.TagRecord
@@ -130,17 +115,6 @@ func APIDeleteTag(c *gin.Context) {
 	}
 }
 
-// Broadcast a message vi websocket
-func Broadcast(clientMessage []byte) {
-	for cs := range activeClients {
-		if err := websocket.Message.Send(cs.websocket, string(clientMessage)); err != nil {
-			// we could not send the message to a peer
-			log.Printf("could not send message to %v", cs.clientIP)
-			log.Print(err)
-		}
-	}
-}
-
 // ReqAddTag handles a tag addition request
 func ReqAddTag(ut string, req []llrp.TagRecord) string {
 	// TODO: success/fail notification per tag
@@ -151,7 +125,7 @@ func ReqAddTag(ut string, req []llrp.TagRecord) string {
 			EPC:    t.EPC,
 		})
 		if err != nil {
-			log.Fatal(err)
+			log.Error(err)
 		}
 
 		add := TagManager{
@@ -159,27 +133,13 @@ func ReqAddTag(ut string, req []llrp.TagRecord) string {
 			Tags:   []*llrp.Tag{tag},
 		}
 		tagManagerChannel <- add
-
-		if add = <-tagManagerChannel; len(add.Tags) != 0 {
-			m := WebsocketMessage{
-				UpdateType: "add",
-				Tag:        t,
-				Tags:       []map[string]interface{}{}}
-			clientMessage, err := json.Marshal(m)
-			if err != nil {
-				panic(err)
-			}
-			Broadcast(clientMessage)
-		} else {
-			failed = true
-		}
 	}
 
 	if failed {
-		log.Printf("failed %v %v", ut, req)
+		log.Errorf("failed %v %v", ut, req)
 		return "error"
 	}
-	log.Printf("%v %v", ut, req)
+	log.Infof("%v %v", ut, req)
 	return ut
 }
 
@@ -201,26 +161,12 @@ func ReqDeleteTag(ut string, req []llrp.TagRecord) string {
 			Tags:   []*llrp.Tag{tag},
 		}
 		tagManagerChannel <- delete
-
-		if delete = <-tagManagerChannel; len(delete.Tags) != 0 {
-			m := WebsocketMessage{
-				UpdateType: "delete",
-				Tag:        t,
-				Tags:       []map[string]interface{}{}}
-			clientMessage, err := json.Marshal(m)
-			if err != nil {
-				panic(err)
-			}
-			Broadcast(clientMessage)
-		} else {
-			failed = true
-		}
 	}
 	if failed {
-		log.Printf("failed %v %v", ut, req)
+		log.Errorf("failed %v %v", ut, req)
 		return "error"
 	}
-	log.Printf("%v %v", ut, req)
+	log.Infof("%v %v", ut, req)
 	return ut
 }
 
@@ -237,73 +183,8 @@ func ReqRetrieveTag() []map[string]interface{} {
 		t := structs.Map(llrp.NewTagRecord(*tag))
 		tagList = append(tagList, t)
 	}
-	log.Printf("retrieve: %v", tagList)
+	log.Infof("retrieve: %v", tagList)
 	return tagList
-}
-
-// SockServer to handle messaging between clients
-func SockServer(ws *websocket.Conn) {
-	var err error
-	//var clientMessage string
-	// use []byte if websocket binary type is blob or arraybuffer
-	var clientMessage []byte
-
-	// cleanup on server side
-	defer func() {
-		if err = ws.Close(); err != nil {
-			log.Print(err)
-		}
-	}()
-
-	client := ws.Request().RemoteAddr
-	log.Printf("client connected: %v", client)
-	clientSock := WebsockConn{ws, client}
-	activeClients[clientSock] = 0
-	log.Printf("number of clients connected: %v", len(activeClients))
-
-	// for loop so the websocket stays open otherwise
-	// it'll close after one Receieve and Send
-	for {
-		if err = websocket.Message.Receive(ws, &clientMessage); err != nil {
-			// If we cannot Read then the connection is closed
-			log.Printf("websocket Disconnected waiting %v", err.Error())
-			// remove the ws client conn from our active clients
-			delete(activeClients, clientSock)
-			log.Printf("number of clients still connected ... %v", len(activeClients))
-			return
-		}
-
-		//clientMessage = clientSock.clientIP + " Said: " + clientMessage
-
-		// Parse the JSON
-		m := WebsocketMessage{}
-		if err = json.Unmarshal(clientMessage, &m); err != nil {
-			log.Print(err)
-		}
-
-		// Handle the command
-		// Compose result struct containing proper parameters
-		// TODO: separate actions into functions
-		switch m.UpdateType {
-		case "add":
-			m.UpdateType = ReqAddTag(m.UpdateType, []llrp.TagRecord{m.Tag})
-		case "delete":
-			m.UpdateType = ReqDeleteTag(m.UpdateType, []llrp.TagRecord{m.Tag})
-		case "retrieve":
-			tagList := ReqRetrieveTag()
-			m = WebsocketMessage{
-				UpdateType: "retrieval",
-				Tag:        llrp.TagRecord{},
-				Tags:       tagList}
-			clientMessage, err = json.Marshal(m)
-			if err != nil {
-				panic(err)
-			}
-			Broadcast(clientMessage)
-		default:
-			log.Printf("unknown UpdateType: %v", m.UpdateType)
-		}
-	}
 }
 
 // Handles incoming requests.
@@ -317,12 +198,11 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 		reqLen, err := conn.Read(buf)
 		if err == io.EOF {
 			// Close the connection when you're done with it.
-			log.Println("the client is disconnected, closing LLRP connection")
+			log.Info("the client is disconnected, closing LLRP connection")
 			conn.Close()
 			return
 		} else if err != nil {
-			log.Println("closing LLRP connection")
-			log.Print(err)
+			log.Infof("closing LLRP connection due to %s", err.Error())
 			conn.Close()
 			return
 		}
@@ -332,12 +212,14 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 		if header == llrp.SetReaderConfigHeader || header == llrp.KeepaliveAckHeader {
 			if header == llrp.SetReaderConfigHeader {
 				// SRC received, start ROAR
-				log.Println(">>> SET_READER_CONFIG")
-				conn.Write(llrp.SetReaderConfigResponse())
-				log.Println("<<< SET_READER_CONFIG_RESPONSE")
+				log.Notice(">>> SET_READER_CONFIG")
+				conn.Write(llrp.SetReaderConfigResponse(currentMessageID))
+				atomic.AddUint32(&currentMessageID, 1)
+				runtime.Gosched()
+				log.Notice("<<< SET_READER_CONFIG_RESPONSE")
 			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
-				log.Println(">>> KEEP_ALIVE_ACK")
+				log.Notice(">>> KEEP_ALIVE_ACK")
 			}
 
 			// Tick ROAR and Keepalive interval
@@ -347,30 +229,48 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 				keepaliveTicker = time.NewTicker(time.Duration(*keepaliveInterval) * time.Second)
 			}
 			go func() {
+				// Initial ROAR message
+				log.Noticef("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
+				for _, trd := range trds {
+					roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
+					err := roar.Send(conn)
+					currentMessageID++
+					if err != nil {
+						log.Error(err)
+						isLLRPConnAlive = false
+						break
+					}
+				}
+
 				for { // Infinite loop
 					isLLRPConnAlive = true
 					select {
 					// ROAccessReport interval tick
 					case <-roarTicker.C:
-						log.Printf("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
+						log.Noticef("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
 						for _, trd := range trds {
-							roar := llrp.NewROAccessReport(trd.Data, messageID)
+							roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
 							err := roar.Send(conn)
-							messageID++
+							atomic.AddUint32(&currentMessageID, 1)
+							runtime.Gosched()
+							time.Sleep(time.Millisecond)
 							if err != nil {
-								log.Print(err)
+								log.Error(err)
 								isLLRPConnAlive = false
 								break
 							}
 						}
 					// Keepalive interval tick
 					case <-keepaliveTicker.C:
-						log.Println("<<< KEEP_ALIVE")
-						conn.Write(llrp.Keepalive())
+						log.Notice("<<< KEEP_ALIVE")
+						conn.Write(llrp.Keepalive(currentMessageID))
+						atomic.AddUint32(&currentMessageID, 1)
+						runtime.Gosched()
+						time.Sleep(time.Millisecond)
 						isLLRPConnAlive = false
 					// When the tag queue is updated
 					case tags := <-tagUpdated:
-						log.Println("### TagUpdated")
+						log.Debug("TagUpdated")
 						trds = tags.BuildTagReportDataStack(*pdu)
 					}
 					if !isLLRPConnAlive {
@@ -384,27 +284,28 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 			}()
 		} else {
 			// Unknown LLRP packet received, reset the connection
-			log.Printf("unknown header: %v, reqlen: %v", header, reqLen)
-			log.Printf("message: %v", buf)
+			log.Warningf("unknown header: %v, reqlen: %v", header, reqLen)
+			log.Debugf("message: %v", buf)
 			return
 		}
 	}
 }
 
-// server mode
+// Server mode
 func runServer() int {
 	// Read virtual tags from a csv file
-	log.Printf("loading virtual Tags from \"%v\"", *file)
+	log.Infof("loading virtual Tags from \"%v\"", *file)
 
 	var tags llrp.Tags
 	if _, err := os.Stat(*file); os.IsNotExist(err) {
-		log.Printf("%v doesn't exist, couldn't load tags", *file)
+		log.Warningf("%v doesn't exist, couldn't load tags", *file)
 	} else {
 		err := binutil.Load(*file, &tags)
 		if err != nil {
-			log.Fatal(err)
+			log.Critical(err)
+			os.Exit(1)
 		}
-		log.Printf("%v tags loaded from %v", len(tags), *file)
+		log.Infof("%v tags loaded from %v", len(tags), *file)
 	}
 
 	// Listen for incoming connections.
@@ -415,24 +316,19 @@ func runServer() int {
 
 	// Close the listener when the application closes.
 	defer l.Close()
-	log.Printf("listening on %v:%v", ip, *port)
+	log.Infof("listening on %v:%v", ip, *port)
 
 	// Channel for communicating virtual tag updates and signals
 	signals := make(chan os.Signal)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	// Handle websocket and static file hosting with gin
+	// Handle /tags
 	go func() {
 		r := gin.Default()
-		r.Use(static.Serve("/", static.LocalFile(os.Getenv("GOPATH")+"/src/github.com/iomz/golemu/web", true)))
-		r.GET("/ws", func(c *gin.Context) {
-			handler := websocket.Handler(SockServer)
-			handler.ServeHTTP(c.Writer, c.Request)
-		})
 		v1 := r.Group("api/v1")
 		v1.POST("/tags", APIPostTag)
 		v1.DELETE("/tags", APIDeleteTag)
-		r.Run(":" + strconv.Itoa(*webPort))
+		r.Run(":" + strconv.Itoa(*apiPort))
 	}()
 
 	go func() {
@@ -473,26 +369,28 @@ func runServer() int {
 				tagManagerChannel <- cmd
 			case signal := <-signals:
 				// Handle SIGINT and SIGTERM.
-				log.Fatalf("%v", signal)
+				log.Criticalf("%v", signal)
+				os.Exit(1)
 			}
 		}
 	}()
 
 	// Handle LLRP connection
-	log.Println("starting LLRP connection...")
+	log.Info("starting LLRP connection...")
 	for {
 		// Accept an incoming connection.
 		conn, err := l.Accept()
 		if err != nil {
-			log.Fatal(err)
+			log.Critical(err)
+			os.Exit(1)
 		}
-		log.Println("LLRP connection initiated")
+		log.Info("LLRP connection initiated")
 
 		// Send back READER_EVENT_NOTIFICATION
 		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
-		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
-		log.Println("<<< READER_EVENT_NOTIFICATION")
-		atomic.AddUint32(&messageID, 1)
+		conn.Write(llrp.ReaderEventNotification(currentMessageID, currentTime))
+		log.Notice("<<< READER_EVENT_NOTIFICATION")
+		atomic.AddUint32(&currentMessageID, 1)
 		runtime.Gosched()
 		time.Sleep(time.Millisecond)
 
@@ -501,51 +399,67 @@ func runServer() int {
 	}
 }
 
-// client mode
+// Client mode
 func runClient() int {
 	// Establish a connection to the llrp client
+	// sleep for 5 seconds if the host is not available and retry
+	log.Infof("waiting for %s:%d ...", ip.String(), *port)
 	conn, err := net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
-	if err != nil {
-		panic(err)
+	for err != nil {
+		time.Sleep(time.Second)
+		conn, err = net.Dial("tcp", ip.String()+":"+strconv.Itoa(*port))
 	}
+	log.Infof("establised an LLRP connection with %v", conn.RemoteAddr())
 
 	header := make([]byte, 2)
 	length := make([]byte, 4)
+	messageID := make([]byte, 4)
 	for {
 		_, err = io.ReadFull(conn, header)
 		if err != nil {
-			log.Fatal(err)
+			log.Critical(err)
+			os.Exit(1)
 		}
-		//length := binary.BigEndian.Uint32(prefix)
+		_, err = io.ReadFull(conn, length)
+		if err != nil {
+			log.Critical(err)
+			os.Exit(1)
+		}
+		_, err = io.ReadFull(conn, messageID)
+		if err != nil {
+			log.Critical(err)
+			os.Exit(1)
+		}
+		// `length` containts the size of the entire message in octets
+		// starting from bit offset 0, hence, the message size is
+		// length - 10 bytes
+		var messageValue []byte
+		if messageSize := binary.BigEndian.Uint32(length) - 10; messageSize != 0 {
+			messageValue = make([]byte, binary.BigEndian.Uint32(length)-10)
+			_, err = io.ReadFull(conn, messageValue)
+			if err != nil {
+				log.Critical(err)
+				os.Exit(1)
+			}
+		}
 
 		h := binary.BigEndian.Uint16(header)
-		if h == llrp.ReaderEventNotificationHeader {
-			_, err = io.ReadFull(conn, length)
-			message := make([]byte, binary.BigEndian.Uint32(length)-6)
-			_, err = io.ReadFull(conn, message)
-			log.Println(">>> READER_EVENT_NOTIFICATION")
-			conn.Write(llrp.SetReaderConfig(messageID))
-		} else if h == llrp.KeepaliveHeader {
-			_, err = io.ReadFull(conn, length)
-			message := make([]byte, binary.BigEndian.Uint32(length)-6)
-			_, err = io.ReadFull(conn, message)
-			log.Println(">>> KEEP_ALIVE")
-			conn.Write(llrp.KeepaliveAck())
-		} else if h == llrp.SetReaderConfigResponseHeader {
-			_, err = io.ReadFull(conn, length)
-			message := make([]byte, binary.BigEndian.Uint32(length)-6)
-			_, err = io.ReadFull(conn, message)
-			log.Println(">>> SET_READER_CONFIG_RESPONSE")
-		} else if h == llrp.ROAccessReportHeader {
-			_, err = io.ReadFull(conn, length)
-			l := binary.BigEndian.Uint32(length)
-			message := make([]byte, l-6)
-			_, err = io.ReadFull(conn, message)
-			log.Println(">>> RO_ACCESS_REPORT")
-			res := llrp.UnmarshalROAccessReportBody(message)
-			log.Printf("%v events received", len(res))
-		} else {
-			log.Fatalf("Unknown header: %v", h)
+		mid := binary.BigEndian.Uint32(messageID)
+		switch h {
+		case llrp.ReaderEventNotificationHeader:
+			log.Noticef(">>> READER_EVENT_NOTIFICATION [Message ID: %d]", mid)
+			conn.Write(llrp.SetReaderConfig(mid + 1))
+		case llrp.KeepaliveHeader:
+			log.Noticef(">>> KEEP_ALIVE [Message ID: %d]", mid)
+			conn.Write(llrp.KeepaliveAck(mid + 1))
+		case llrp.SetReaderConfigResponseHeader:
+			log.Noticef(">>> SET_READER_CONFIG_RESPONSE [Message ID: %d]", mid)
+		case llrp.ROAccessReportHeader:
+			log.Noticef(">>> RO_ACCESS_REPORT [Message ID: %d]", mid)
+			res := llrp.UnmarshalROAccessReportBody(messageValue)
+			log.Noticef("%v events received", len(res))
+		default:
+			log.Warningf("Unknown header: %v, Message ID: %d", h, mid)
 		}
 	}
 }
@@ -553,9 +467,8 @@ func runClient() int {
 func loadTagsForNextEventCycle(simulationFiles []string, eventCycle *int) (llrp.Tags, error) {
 	tags := llrp.Tags{}
 	if len(simulationFiles) <= *eventCycle {
-		//log.Printf("Total iteration: %v, current event cycle: %v", len(simulationFiles), eventCycle)
-		//return tags, fmt.Errorf("no more event cycle found in %s", *simulationDir)
-		log.Printf("Resetting event cycle from %v to 0", *eventCycle)
+		log.Debugf("Total iteration: %v, current event cycle: %v", len(simulationFiles), eventCycle)
+		log.Infof("Resetting event cycle from %v to 0", *eventCycle)
 		*eventCycle = 0
 	}
 	err := binutil.Load(simulationFiles[*eventCycle], &tags)
@@ -565,9 +478,9 @@ func loadTagsForNextEventCycle(simulationFiles []string, eventCycle *int) (llrp.
 	return tags, nil
 }
 
-// simulator mode
+// Simulator mode
 func runSimulation() {
-	// read simulation dir and prepare the file list
+	// Read simulation dir and prepare the file list
 	dir, err := filepath.Abs(*simulationDir)
 	if err != nil {
 		log.Fatal(err)
@@ -586,15 +499,15 @@ func runSimulation() {
 		log.Fatalf("no event cycle file found in %s", *simulationDir)
 	}
 
-	// start listening for incoming connections.
+	// Start listening for incoming connections.
 	l, err := net.Listen("tcp", ip.String()+":"+strconv.Itoa(*port))
 	if err != nil {
 		panic(err)
 	}
 	defer l.Close()
-	log.Printf("listening on %v:%v", ip, *port)
+	log.Infof("listening on %v:%v", ip, *port)
 
-	// channel for communicating virtual tag updates and signals
+	// Channel for communicating virtual tag updates and signals
 	signals := make(chan os.Signal)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -606,24 +519,25 @@ func runSimulation() {
 		}
 	}()
 
-	// handle LLRP connection
-	log.Println("waiting for LLRP connection...")
+	// Handle LLRP connection
+	log.Info("waiting for LLRP connection...")
 	conn, err := l.Accept()
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("initiated LLRP connection with %v", conn.RemoteAddr())
+	log.Infof("initiated LLRP connection with %v", conn.RemoteAddr())
 
 	// Send back READER_EVENT_NOTIFICATION
 	currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
-	conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
-	log.Println("<<< READER_EVENT_NOTIFICATION")
-	messageID++
+	conn.Write(llrp.ReaderEventNotification(currentMessageID, currentTime))
+	log.Notice("<<< READER_EVENT_NOTIFICATION")
+	atomic.AddUint32(&currentMessageID, 1)
+	runtime.Gosched()
 
-	// simulate event cycles from 0
+	// Simulate event cycles from 0
 	eventCycle := 0
 
-	// initialize the first event cycle and roarTicker
+	// Initialize the first event cycle and roarTicker
 	tags, err := loadTagsForNextEventCycle(simulationFiles, &eventCycle)
 	if err != nil {
 		log.Fatal(err)
@@ -632,7 +546,7 @@ func runSimulation() {
 	trds := tags.BuildTagReportDataStack(*pdu)
 	roarTicker := time.NewTicker(time.Duration(*reportInterval) * time.Millisecond)
 
-	// prepare LLRP header storage
+	// Prepare LLRP header storage
 	header := make([]byte, 2)
 	length := make([]byte, 4)
 	receivedMessageID := make([]byte, 4)
@@ -661,42 +575,58 @@ func runSimulation() {
 		h := binary.BigEndian.Uint16(header)
 		switch h {
 		case llrp.SetReaderConfigHeader:
-			conn.Write(llrp.SetReaderConfigResponse())
+			conn.Write(llrp.SetReaderConfigResponse(currentMessageID))
+			atomic.AddUint32(&currentMessageID, 1)
+			runtime.Gosched()
+			time.Sleep(time.Millisecond)
+
 			go func() {
 				for {
 					_, ok := <-roarTicker.C
 					if !ok {
-						log.Fatalln("roarTicker died")
+						log.Critical("roarTicker died")
+						os.Exit(1)
 					}
-					log.Printf("<<< Simulated Event Cycle %v, %v tags, %v roars", eventCycle, len(tags), len(trds))
+					log.Infof("<<< Simulated Event Cycle %v, %v tags, %v roars", eventCycle, len(tags), len(trds))
 					for _, trd := range trds {
-						roar := llrp.NewROAccessReport(trd.Data, messageID)
+						roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
 						err := roar.Send(conn)
 						if err != nil {
-							log.Fatal(err)
+							log.Critical(err)
+							os.Exit(1)
 						}
-						messageID++
+						atomic.AddUint32(&currentMessageID, 1)
+						runtime.Gosched()
 					}
-					// prepare for the next event cycle
+					// Prepare for the next event cycle
 					tags, err = loadTagsForNextEventCycle(simulationFiles, &eventCycle)
 					eventCycle++
 					if err != nil {
-						log.Print(err)
+						log.Error(err)
 						continue
 					}
 					trds = tags.BuildTagReportDataStack(*pdu)
 				}
 			}()
 		default:
-			// unknown LLRP packet received, reset the connection
-			log.Printf(">>> header: %v", h)
+			// Unknown LLRP packet received, reset the connection
+			log.Warningf(">>> header: %v", h)
 		}
 	}
 }
 
 func main() {
+	// Set version
 	app.Version(version)
 	parse := kingpin.MustParse(app.Parse(os.Args[1:]))
+
+	// Set up go-logging
+	logBackend := logging.NewLogBackend(os.Stderr, "", 0)
+	logFormat := logging.MustStringFormatter(
+		`%{color}%{time:15:04:05.000} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}`,
+	)
+	logBackendFormatter := logging.NewBackendFormatter(logBackend, logFormat)
+	logging.SetBackend(logBackendFormatter)
 
 	if *debug {
 		//loggo.ConfigureLoggers("TRACE")
