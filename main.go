@@ -7,7 +7,6 @@ package main
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"io"
 	"io/ioutil"
 	"log"
@@ -25,12 +24,11 @@ import (
 	"time"
 
 	"github.com/fatih/structs"
-	"github.com/gin-gonic/contrib/static"
+	//"github.com/gin-gonic/contrib/static"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/iomz/go-llrp"
 	"github.com/iomz/go-llrp/binutil"
-	"golang.org/x/net/websocket"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -51,8 +49,8 @@ var (
 
 	// server mode
 	server  = app.Command("server", "Run as an LLRP tag stream server.")
-	webPort = server.Flag("webPort", "Port listening for web access.").Short('w').Default("3000").Int()
-	file    = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.csv").String()
+	apiPort = server.Flag("apiPort", "The port for the API endpoint.").Default("3000").Int()
+	file    = server.Flag("file", "The file containing Tag data.").Short('f').Default("tags.gob").String()
 
 	// client mode
 	client = app.Command("client", "Run as an LLRP client.")
@@ -67,8 +65,6 @@ var (
 	messageID = uint32(*initialMessageID)
 	// Current KeepaliveID
 	keepaliveID = *initialKeepaliveID
-	// Current activeClients
-	activeClients = make(map[WebsockConn]int) // map containing clients
 	// Tag management channel
 	tagManagerChannel = make(chan TagManager)
 	// notify tag update channel
@@ -95,19 +91,6 @@ const (
 	DeleteTags
 )
 
-// WebsocketMessage to unmarshal JSON message from web clients
-type WebsocketMessage struct {
-	UpdateType string
-	Tag        llrp.TagRecord
-	Tags       []map[string]interface{}
-}
-
-// WebsockConn holds connection consists of the websocket and the client ip
-type WebsockConn struct {
-	websocket *websocket.Conn
-	clientIP  string
-}
-
 // APIPostTag redirects the tag addition request
 func APIPostTag(c *gin.Context) {
 	var json []llrp.TagRecord
@@ -130,17 +113,6 @@ func APIDeleteTag(c *gin.Context) {
 	}
 }
 
-// Broadcast a message vi websocket
-func Broadcast(clientMessage []byte) {
-	for cs := range activeClients {
-		if err := websocket.Message.Send(cs.websocket, string(clientMessage)); err != nil {
-			// we could not send the message to a peer
-			log.Printf("could not send message to %v", cs.clientIP)
-			log.Print(err)
-		}
-	}
-}
-
 // ReqAddTag handles a tag addition request
 func ReqAddTag(ut string, req []llrp.TagRecord) string {
 	// TODO: success/fail notification per tag
@@ -159,20 +131,6 @@ func ReqAddTag(ut string, req []llrp.TagRecord) string {
 			Tags:   []*llrp.Tag{tag},
 		}
 		tagManagerChannel <- add
-
-		if add = <-tagManagerChannel; len(add.Tags) != 0 {
-			m := WebsocketMessage{
-				UpdateType: "add",
-				Tag:        t,
-				Tags:       []map[string]interface{}{}}
-			clientMessage, err := json.Marshal(m)
-			if err != nil {
-				panic(err)
-			}
-			Broadcast(clientMessage)
-		} else {
-			failed = true
-		}
 	}
 
 	if failed {
@@ -201,20 +159,6 @@ func ReqDeleteTag(ut string, req []llrp.TagRecord) string {
 			Tags:   []*llrp.Tag{tag},
 		}
 		tagManagerChannel <- delete
-
-		if delete = <-tagManagerChannel; len(delete.Tags) != 0 {
-			m := WebsocketMessage{
-				UpdateType: "delete",
-				Tag:        t,
-				Tags:       []map[string]interface{}{}}
-			clientMessage, err := json.Marshal(m)
-			if err != nil {
-				panic(err)
-			}
-			Broadcast(clientMessage)
-		} else {
-			failed = true
-		}
 	}
 	if failed {
 		log.Printf("failed %v %v", ut, req)
@@ -239,71 +183,6 @@ func ReqRetrieveTag() []map[string]interface{} {
 	}
 	log.Printf("retrieve: %v", tagList)
 	return tagList
-}
-
-// SockServer to handle messaging between clients
-func SockServer(ws *websocket.Conn) {
-	var err error
-	//var clientMessage string
-	// use []byte if websocket binary type is blob or arraybuffer
-	var clientMessage []byte
-
-	// cleanup on server side
-	defer func() {
-		if err = ws.Close(); err != nil {
-			log.Print(err)
-		}
-	}()
-
-	client := ws.Request().RemoteAddr
-	log.Printf("client connected: %v", client)
-	clientSock := WebsockConn{ws, client}
-	activeClients[clientSock] = 0
-	log.Printf("number of clients connected: %v", len(activeClients))
-
-	// for loop so the websocket stays open otherwise
-	// it'll close after one Receieve and Send
-	for {
-		if err = websocket.Message.Receive(ws, &clientMessage); err != nil {
-			// If we cannot Read then the connection is closed
-			log.Printf("websocket Disconnected waiting %v", err.Error())
-			// remove the ws client conn from our active clients
-			delete(activeClients, clientSock)
-			log.Printf("number of clients still connected ... %v", len(activeClients))
-			return
-		}
-
-		//clientMessage = clientSock.clientIP + " Said: " + clientMessage
-
-		// Parse the JSON
-		m := WebsocketMessage{}
-		if err = json.Unmarshal(clientMessage, &m); err != nil {
-			log.Print(err)
-		}
-
-		// Handle the command
-		// Compose result struct containing proper parameters
-		// TODO: separate actions into functions
-		switch m.UpdateType {
-		case "add":
-			m.UpdateType = ReqAddTag(m.UpdateType, []llrp.TagRecord{m.Tag})
-		case "delete":
-			m.UpdateType = ReqDeleteTag(m.UpdateType, []llrp.TagRecord{m.Tag})
-		case "retrieve":
-			tagList := ReqRetrieveTag()
-			m = WebsocketMessage{
-				UpdateType: "retrieval",
-				Tag:        llrp.TagRecord{},
-				Tags:       tagList}
-			clientMessage, err = json.Marshal(m)
-			if err != nil {
-				panic(err)
-			}
-			Broadcast(clientMessage)
-		default:
-			log.Printf("unknown UpdateType: %v", m.UpdateType)
-		}
-	}
 }
 
 // Handles incoming requests.
@@ -421,18 +300,14 @@ func runServer() int {
 	signals := make(chan os.Signal)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 
-	// Handle websocket and static file hosting with gin
+	// Handle /tags
 	go func() {
 		r := gin.Default()
-		r.Use(static.Serve("/", static.LocalFile(os.Getenv("GOPATH")+"/src/github.com/iomz/golemu/web", true)))
-		r.GET("/ws", func(c *gin.Context) {
-			handler := websocket.Handler(SockServer)
-			handler.ServeHTTP(c.Writer, c.Request)
-		})
+		//r.Use(static.Serve("/", static.LocalFile(os.Getenv("GOPATH")+"/src/github.com/iomz/golemu/web", true)))
 		v1 := r.Group("api/v1")
 		v1.POST("/tags", APIPostTag)
 		v1.DELETE("/tags", APIDeleteTag)
-		r.Run(":" + strconv.Itoa(*webPort))
+		r.Run(":" + strconv.Itoa(*apiPort))
 	}()
 
 	go func() {
