@@ -64,7 +64,7 @@ var (
 	// LLRPConn flag
 	isLLRPConnAlive = false
 	// Current messageID
-	messageID = uint32(*initialMessageID)
+	currentMessageID = uint32(*initialMessageID)
 	// Current KeepaliveID
 	keepaliveID = *initialKeepaliveID
 	// Tag management channel
@@ -213,7 +213,9 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 			if header == llrp.SetReaderConfigHeader {
 				// SRC received, start ROAR
 				log.Notice(">>> SET_READER_CONFIG")
-				conn.Write(llrp.SetReaderConfigResponse())
+				conn.Write(llrp.SetReaderConfigResponse(currentMessageID))
+				atomic.AddUint32(&currentMessageID, 1)
+				runtime.Gosched()
 				log.Notice("<<< SET_READER_CONFIG_RESPONSE")
 			} else if header == llrp.KeepaliveAckHeader {
 				// KA receieved, continue ROAR
@@ -230,9 +232,9 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 				// Initial ROAR message
 				log.Noticef("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
 				for _, trd := range trds {
-					roar := llrp.NewROAccessReport(trd.Data, messageID)
+					roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
 					err := roar.Send(conn)
-					messageID++
+					currentMessageID++
 					if err != nil {
 						log.Error(err)
 						isLLRPConnAlive = false
@@ -247,9 +249,11 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 					case <-roarTicker.C:
 						log.Noticef("<<< RO_ACCESS_REPORT (# reports: %v, # total tags: %v)", len(trds), trds.TotalTagCounts())
 						for _, trd := range trds {
-							roar := llrp.NewROAccessReport(trd.Data, messageID)
+							roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
 							err := roar.Send(conn)
-							messageID++
+							atomic.AddUint32(&currentMessageID, 1)
+							runtime.Gosched()
+							time.Sleep(time.Millisecond)
 							if err != nil {
 								log.Error(err)
 								isLLRPConnAlive = false
@@ -259,7 +263,10 @@ func handleRequest(conn net.Conn, tags llrp.Tags) {
 					// Keepalive interval tick
 					case <-keepaliveTicker.C:
 						log.Notice("<<< KEEP_ALIVE")
-						conn.Write(llrp.Keepalive())
+						conn.Write(llrp.Keepalive(currentMessageID))
+						atomic.AddUint32(&currentMessageID, 1)
+						runtime.Gosched()
+						time.Sleep(time.Millisecond)
 						isLLRPConnAlive = false
 					// When the tag queue is updated
 					case tags := <-tagUpdated:
@@ -381,9 +388,9 @@ func runServer() int {
 
 		// Send back READER_EVENT_NOTIFICATION
 		currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
-		conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
+		conn.Write(llrp.ReaderEventNotification(currentMessageID, currentTime))
 		log.Notice("<<< READER_EVENT_NOTIFICATION")
-		atomic.AddUint32(&messageID, 1)
+		atomic.AddUint32(&currentMessageID, 1)
 		runtime.Gosched()
 		time.Sleep(time.Millisecond)
 
@@ -444,7 +451,7 @@ func runClient() int {
 			conn.Write(llrp.SetReaderConfig(mid + 1))
 		case llrp.KeepaliveHeader:
 			log.Noticef(">>> KEEP_ALIVE [Message ID: %d]", mid)
-			conn.Write(llrp.KeepaliveAck())
+			conn.Write(llrp.KeepaliveAck(mid + 1))
 		case llrp.SetReaderConfigResponseHeader:
 			log.Noticef(">>> SET_READER_CONFIG_RESPONSE [Message ID: %d]", mid)
 		case llrp.ROAccessReportHeader:
@@ -522,9 +529,10 @@ func runSimulation() {
 
 	// Send back READER_EVENT_NOTIFICATION
 	currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
-	conn.Write(llrp.ReaderEventNotification(messageID, currentTime))
+	conn.Write(llrp.ReaderEventNotification(currentMessageID, currentTime))
 	log.Notice("<<< READER_EVENT_NOTIFICATION")
-	messageID++
+	atomic.AddUint32(&currentMessageID, 1)
+	runtime.Gosched()
 
 	// Simulate event cycles from 0
 	eventCycle := 0
@@ -567,7 +575,11 @@ func runSimulation() {
 		h := binary.BigEndian.Uint16(header)
 		switch h {
 		case llrp.SetReaderConfigHeader:
-			conn.Write(llrp.SetReaderConfigResponse())
+			conn.Write(llrp.SetReaderConfigResponse(currentMessageID))
+			atomic.AddUint32(&currentMessageID, 1)
+			runtime.Gosched()
+			time.Sleep(time.Millisecond)
+
 			go func() {
 				for {
 					_, ok := <-roarTicker.C
@@ -577,13 +589,14 @@ func runSimulation() {
 					}
 					log.Infof("<<< Simulated Event Cycle %v, %v tags, %v roars", eventCycle, len(tags), len(trds))
 					for _, trd := range trds {
-						roar := llrp.NewROAccessReport(trd.Data, messageID)
+						roar := llrp.NewROAccessReport(trd.Data, currentMessageID)
 						err := roar.Send(conn)
 						if err != nil {
 							log.Critical(err)
 							os.Exit(1)
 						}
-						messageID++
+						atomic.AddUint32(&currentMessageID, 1)
+						runtime.Gosched()
 					}
 					// Prepare for the next event cycle
 					tags, err = loadTagsForNextEventCycle(simulationFiles, &eventCycle)

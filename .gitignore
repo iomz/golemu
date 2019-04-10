@@ -1,9 +1,8 @@
 *.bak
 *.csv
+*.gob
 *.json
 *.old
 *.swp
 sim/*
-web/*
-web/vendor/*
 vendor/*
