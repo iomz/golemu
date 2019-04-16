@@ -5,7 +5,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/iomz/golemu)](https://goreportcard.com/report/github.com/iomz/golemu)
 [![GoDoc](https://godoc.org/github.com/iomz/golemu?status.svg)](http://godoc.org/github.com/iomz/golemu)
 
-A simple LLRP-based RFID reader emulator with [go-llrp](https://github.com/iomz/go-llrp)
+A simple LLRP-based RFID reader emulator with [go-llrp](https://github.com/iomz/go-llrp). This emulator was developed as part of [my Master's thesis](https://web.sfc.wide.ad.jp/~iomz/public/mthesis).
 
 Try the [demo](https://github.com/iomz/docker-gosstrak-demo) with docker-compose.
 
@@ -87,6 +87,10 @@ The PDU option (`-m` or `--pdu`) specifies the maximum allowed PDU and is by def
 Note that LLRP sometimes doesn't specify the maximum number of parameters in a single message; theoretically, an LLRP packet can grow to the maximum segment size of TCP packets, but this severely affects the overall performance depending on the traffic or the network configurations.
 
 ## License
+
+Please cite the following paper.
+
+Mizutani, I., & Mitsugi, J. (2016). A Multicode and Portable RFID Tag Events Emulator for RFID Information System. Proceedings of the 6th International Conference on the Internet of Things  - IoT’16, 187–188. https://doi.org/10.1145/2991561.2998470
 
 See the LICENSE file.
 
