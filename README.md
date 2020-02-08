@@ -11,7 +11,10 @@ Try the [demo](https://github.com/iomz/docker-gosstrak-demo) with docker-compose
 
 golemu emulates LLRP (Low Level Reader Protocol) communications for RFID inventories via [EPC Gen 2 Class 1 UHF standard](https://www.gs1.org/standards/epc-rfid/uhf-air-interface-protocol) and [ISO/IEC 18000-6 Type C](https://www.iso.org/standard/59644.html).
 
-Please refer to [the original LLRP standard](https://www.gs1.org/standards/epc-rfid/llrp/1-1-0) or [the ISO/IEC equivalent](https://www.iso.org/standard/60833.html).
+Please refer to [the original LLRP standard](https://www.gs1.org/standards/epc-rfid/llrp/1-1-0) or [the ISO/IEC equivalent](https://www.iso.org/standard/60833.html) as well as [our demo paper](https://dl.acm.org/doi/10.1145/2991561.2998470):
+```
+Mizutani, I., & Mitsugi, J. (2016). A Multicode and Portable RFID Tag Events Emulator for RFID Information System. Proceedings of the 6th International Conference on the Internet of Things  - IoT’16, 187–188. https://doi.org/10.1145/2991561.2998470
+```
 
 # Installation
 
@@ -87,10 +90,6 @@ The PDU option (`-m` or `--pdu`) specifies the maximum allowed PDU and is by def
 Note that LLRP sometimes doesn't specify the maximum number of parameters in a single message; theoretically, an LLRP packet can grow to the maximum segment size of TCP packets, but this severely affects the overall performance depending on the traffic or the network configurations.
 
 ## License
-
-Please cite the following paper.
-
-Mizutani, I., & Mitsugi, J. (2016). A Multicode and Portable RFID Tag Events Emulator for RFID Information System. Proceedings of the 6th International Conference on the Internet of Things  - IoT’16, 187–188. https://doi.org/10.1145/2991561.2998470
 
 See the LICENSE file.
 
