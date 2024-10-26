@@ -4,7 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/iomz/golemu)](https://goreportcard.com/report/github.com/iomz/golemu)
 [![codecov](https://codecov.io/gh/iomz/golemu/branch/main/graph/badge.svg?token=fN1tyc6ssX)](https://codecov.io/gh/iomz/golemu)
 [![GoDoc](https://godoc.org/github.com/iomz/golemu?status.svg)](http://godoc.org/github.com/iomz/golemu)
-[![License](https://img.shields.io/github/license/iomz/golemu.svg)](https://github.com/iomz/golemu/blob/master/LICENSE)
+[![License](https://img.shields.io/github/license/iomz/golemu.svg)](https://github.com/iomz/golemu/blob/main/LICENSE)
 
 A simple LLRP-based RFID reader emulator with [go-llrp](https://github.com/iomz/go-llrp). This emulator was developed as part of [my Master's thesis](https://web.sfc.wide.ad.jp/~iomz/public/mthesis).
 
