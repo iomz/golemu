@@ -107,14 +107,10 @@ func TestServer_runTagManager(t *testing.T) {
 		Tags:   llrp.Tags{tag1},
 	}
 
-	// Start tag manager in goroutine - it will run forever but we'll test one command
 	signals := make(chan os.Signal, 1)
-	go func() {
-		server.runTagManager(signals)
-	}()
-
-	// Give goroutine time to start
-	time.Sleep(10 * time.Millisecond)
+	// Start runTagManager in a goroutine - it will run until a signal is received
+	// We don't send a signal in tests to avoid log.Fatalf terminating the test process
+	go server.runTagManager(signals)
 
 	// Send command
 	server.tagManagerChan <- cmd
@@ -134,7 +130,7 @@ func TestServer_runTagManager(t *testing.T) {
 	if len(tags) != 1 {
 		t.Errorf("expected 1 tag in service, got %d", len(tags))
 	}
-	// Note: goroutine continues running but test completes
+	// Note: The goroutine will continue running, but that's fine for tests
 }
 
 func TestServer_runTagManager_RetrieveTags(t *testing.T) {
@@ -155,12 +151,9 @@ func TestServer_runTagManager_RetrieveTags(t *testing.T) {
 	}
 
 	signals := make(chan os.Signal, 1)
-	go func() {
-		server.runTagManager(signals)
-	}()
-
-	// Give goroutine time to start
-	time.Sleep(10 * time.Millisecond)
+	// Start runTagManager in a goroutine - it will run until a signal is received
+	// We don't send a signal in tests to avoid log.Fatalf terminating the test process
+	go server.runTagManager(signals)
 
 	// Send command
 	server.tagManagerChan <- cmd
@@ -174,7 +167,6 @@ func TestServer_runTagManager_RetrieveTags(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for tag manager response")
 	}
-	// Note: goroutine continues running but test completes
 }
 
 func TestServer_runTagManager_DeleteTags(t *testing.T) {
@@ -195,12 +187,9 @@ func TestServer_runTagManager_DeleteTags(t *testing.T) {
 	}
 
 	signals := make(chan os.Signal, 1)
-	go func() {
-		server.runTagManager(signals)
-	}()
-
-	// Give goroutine time to start
-	time.Sleep(10 * time.Millisecond)
+	// Start runTagManager in a goroutine - it will run until a signal is received
+	// We don't send a signal in tests to avoid log.Fatalf terminating the test process
+	go server.runTagManager(signals)
 
 	// Send command
 	server.tagManagerChan <- cmd
@@ -220,5 +209,4 @@ func TestServer_runTagManager_DeleteTags(t *testing.T) {
 	if len(tags) != 0 {
 		t.Errorf("expected 0 tags after deletion, got %d", len(tags))
 	}
-	// Note: goroutine continues running but test completes
 }

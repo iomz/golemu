@@ -5,6 +5,7 @@
 package connection
 
 import (
+	"context"
 	"io"
 	"net"
 	"strconv"
@@ -40,42 +41,78 @@ func NewClient(ip string, port int) *Client {
 //
 // Returns 0 on normal shutdown, 1 on error.
 func (c *Client) Run() int {
-	log.Infof("waiting for %s:%d ...", c.ip, c.port)
-	conn, err := net.Dial("tcp", c.ip+":"+strconv.Itoa(c.port))
-	for err != nil {
-		time.Sleep(time.Second)
-		conn, err = net.Dial("tcp", c.ip+":"+strconv.Itoa(c.port))
-	}
-	defer conn.Close()
-	log.Infof("established an LLRP connection with %v", conn.RemoteAddr())
+	return c.RunWithContext(context.Background())
+}
 
+func (c *Client) RunWithContext(ctx context.Context) int {
+	log.Infof("waiting for %s:%d ...", c.ip, c.port)
+
+	var conn net.Conn
+	var err error
+	backoff := time.Second
 	for {
-		hdr, messageValue, err := ReadLLRPMessage(conn)
-		if err != nil {
-			if err == io.EOF {
-				log.Info("connection closed by server")
-				return 0
+		dialer := net.Dialer{Timeout: 10 * time.Second}
+		conn, err = dialer.DialContext(ctx, "tcp", c.ip+":"+strconv.Itoa(c.port))
+		if err == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			log.Info("client shutdown requested")
+			return 0
+		}
+		log.Debugf("connection failed, retrying in %v: %v", backoff, err)
+		select {
+		case <-time.After(backoff):
+			backoff = time.Duration(float64(backoff) * 1.5)
+			if backoff > 30*time.Second {
+				backoff = 30 * time.Second
 			}
-			log.Errorf("error reading LLRP message: %v", err)
+		case <-ctx.Done():
+			log.Info("client shutdown requested")
+			return 0
+		}
+	}
+
+	defer conn.Close()
+	log.Infof("connected to %s:%d", c.ip, c.port)
+
+	// Process incoming messages
+	for {
+		hdr, msgBody, err := ReadLLRPMessage(conn)
+		if err == io.EOF {
+			log.Info("server disconnected, closing connection")
+			return 0
+		} else if err != nil {
+			log.Errorf("error reading message: %v", err)
 			return 1
 		}
 
-		c.handleMessage(conn, hdr.Header, hdr.MessageID, messageValue)
+		c.handleMessage(conn, hdr.Header, hdr.MessageID, msgBody)
 	}
 }
 
 func (c *Client) handleMessage(conn net.Conn, header uint16, messageID uint32, messageValue []byte) {
+	// Handle messageID overflow
+	nextMessageID := messageID + 1
+	if nextMessageID == 0 {
+		nextMessageID = 1
+	}
+
 	switch header {
 	case llrp.ReaderEventNotificationHeader:
 		log.WithFields(log.Fields{
 			"Message ID": messageID,
 		}).Info(">>> READER_EVENT_NOTIFICATION")
-		conn.Write(llrp.SetReaderConfig(messageID + 1))
+		if _, err := conn.Write(llrp.SetReaderConfig(nextMessageID)); err != nil {
+			log.Errorf("failed to write SetReaderConfig: %v", err)
+		}
 	case llrp.KeepaliveHeader:
 		log.WithFields(log.Fields{
 			"Message ID": messageID,
 		}).Info(">>> KEEP_ALIVE")
-		conn.Write(llrp.KeepaliveAck(messageID + 1))
+		if _, err := conn.Write(llrp.KeepaliveAck(nextMessageID)); err != nil {
+			log.Errorf("failed to write KeepaliveAck: %v", err)
+		}
 	case llrp.SetReaderConfigResponseHeader:
 		log.WithFields(log.Fields{
 			"Message ID": messageID,

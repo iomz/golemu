@@ -65,11 +65,9 @@ func (h *Handler) HandleRequest(conn net.Conn, tags llrp.Tags) {
 		hdr, _, err := ReadLLRPMessage(conn)
 		if err == io.EOF {
 			log.Info("the client is disconnected, closing LLRP connection")
-			conn.Close()
 			return
 		} else if err != nil {
 			log.Infof("closing LLRP connection due to %s", err.Error())
-			conn.Close()
 			return
 		}
 
@@ -78,7 +76,6 @@ func (h *Handler) HandleRequest(conn net.Conn, tags llrp.Tags) {
 			log.Info(">>> SET_READER_CONFIG")
 			if _, err := conn.Write(llrp.SetReaderConfigResponse(*h.currentMessageID)); err != nil {
 				log.Warnf("error writing SET_READER_CONFIG_RESPONSE: %v", err)
-				conn.Close()
 				return
 			}
 			atomic.AddUint32(h.currentMessageID, 1)
@@ -106,6 +103,10 @@ func (h *Handler) startReportLoop(conn net.Conn, trds llrp.TagReportDataStack) {
 	}
 
 	go func() {
+		defer roarTicker.Stop()
+		if h.keepaliveInterval != 0 {
+			defer keepaliveTicker.Stop()
+		}
 		defer h.reportLoopStarted.Store(false)
 		// Initial ROAR message
 		log.WithFields(log.Fields{
@@ -156,10 +157,6 @@ func (h *Handler) startReportLoop(conn net.Conn, trds llrp.TagReportDataStack) {
 				trds = tags.BuildTagReportDataStack(h.pdu)
 			}
 			if !h.isConnAlive.Load() {
-				roarTicker.Stop()
-				if h.keepaliveInterval != 0 {
-					keepaliveTicker.Stop()
-				}
 				break
 			}
 		}

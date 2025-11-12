@@ -99,7 +99,7 @@ func (s *Simulator) Run() int {
 	log.Infof("initiated LLRP connection with %v", conn.RemoteAddr())
 
 	// Send READER_EVENT_NOTIFICATION
-	currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
+	currentTime := uint64(time.Now().UTC().UnixNano() / 1000)
 	if _, err := conn.Write(llrp.ReaderEventNotification(*s.currentMessageID, currentTime)); err != nil {
 		log.Fatalf("error sending READER_EVENT_NOTIFICATION: %v", err)
 	}
@@ -108,37 +108,48 @@ func (s *Simulator) Run() int {
 
 	eventCycle := 0
 	roarTicker := time.NewTicker(time.Duration(s.reportInterval) * time.Millisecond)
+	defer roarTicker.Stop() // Safety net in case simulation never starts
 	var simulationDone chan struct{}
 
 	for {
-		hdr, _, err := ReadLLRPMessage(conn)
-		if err != nil {
-			if err == io.EOF || errors.Is(err, net.ErrClosed) {
-				log.Info("connection closed, exiting")
-				return 0
-			}
-			log.Fatalf("error reading LLRP message: %v", err)
+		// Use a channel to read messages asynchronously so we can select on done signal
+		type readResult struct {
+			hdr *LLRPHeader
+			err error
 		}
+		readCh := make(chan readResult, 1)
+		go func() {
+			hdr, _, err := ReadLLRPMessage(conn)
+			readCh <- readResult{hdr: hdr, err: err}
+		}()
 
-		if hdr.Header == llrp.SetReaderConfigHeader {
-			if _, err := conn.Write(llrp.SetReaderConfigResponse(*s.currentMessageID)); err != nil {
-				log.Fatalf("error writing SET_READER_CONFIG_RESPONSE: %v", err)
+		select {
+		case result := <-readCh:
+			if result.err != nil {
+				if result.err == io.EOF || errors.Is(result.err, net.ErrClosed) {
+					log.Info("connection closed, exiting")
+					return 0
+				}
+				log.Fatalf("error reading LLRP message: %v", result.err)
 			}
-			atomic.AddUint32(s.currentMessageID, 1)
 
-			if s.loopStarted.CompareAndSwap(false, true) {
-				simulationDone = s.startSimulationLoop(conn, simulationFiles, &eventCycle, roarTicker)
-				go func() {
-					<-simulationDone
-					log.Info("simulation loop terminated, closing connection")
-					roarTicker.Stop()
-					conn.Close()
-				}()
+			if result.hdr.Header == llrp.SetReaderConfigHeader {
+				if _, err := conn.Write(llrp.SetReaderConfigResponse(*s.currentMessageID)); err != nil {
+					log.Fatalf("error writing SET_READER_CONFIG_RESPONSE: %v", err)
+				}
+				atomic.AddUint32(s.currentMessageID, 1)
+
+				if s.loopStarted.CompareAndSwap(false, true) {
+					simulationDone = s.startSimulationLoop(conn, simulationFiles, &eventCycle, roarTicker)
+				} else {
+					log.Warn("simulation loop already running; ignoring duplicate SET_READER_CONFIG")
+				}
 			} else {
-				log.Warn("simulation loop already running; ignoring duplicate SET_READER_CONFIG")
+				log.Warnf(">>> header: %v", result.hdr.Header)
 			}
-		} else {
-			log.Warnf(">>> header: %v", hdr.Header)
+		case <-simulationDone:
+			log.Info("simulation loop terminated, exiting read loop")
+			return 0
 		}
 	}
 }
@@ -183,6 +194,7 @@ func (s *Simulator) startSimulationLoop(conn net.Conn, simulationFiles []string,
 	go func() {
 		defer s.loopStarted.Store(false)
 		defer close(done)
+		defer roarTicker.Stop()
 		for {
 			<-roarTicker.C
 			tags, err := s.loadTagsForNextEventCycle(simulationFiles, eventCycle)
