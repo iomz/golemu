@@ -123,8 +123,10 @@ func (h *Handler) startReportLoop(conn net.Conn, trds llrp.TagReportDataStack) {
 			}
 		}
 
+		// Mark connection as alive before entering the main loop
+		h.isConnAlive.Store(true)
+
 		for {
-			h.isConnAlive.Store(true)
 			select {
 			case <-roarTicker.C:
 				log.WithFields(log.Fields{

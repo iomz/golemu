@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -141,9 +142,11 @@ func TestReadLLRPMessage_IncompleteBody(t *testing.T) {
 }
 
 // mockConn is a simple mock implementation of net.Conn for testing
+// It is thread-safe for concurrent writes to support testing goroutines.
 type mockConn struct {
 	reader io.Reader
 	writer io.Writer
+	mu     sync.Mutex // Protects concurrent writes to the writer
 }
 
 func (m *mockConn) Read(b []byte) (n int, err error) {
@@ -154,10 +157,23 @@ func (m *mockConn) Read(b []byte) (n int, err error) {
 }
 
 func (m *mockConn) Write(b []byte) (n int, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.writer == nil {
 		return len(b), nil
 	}
 	return m.writer.Write(b)
+}
+
+// Len returns the length of the underlying buffer if it's a *bytes.Buffer.
+// This method is thread-safe and should be used instead of accessing the buffer directly.
+func (m *mockConn) Len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if buf, ok := m.writer.(*bytes.Buffer); ok {
+		return buf.Len()
+	}
+	return 0
 }
 
 func (m *mockConn) Close() error {

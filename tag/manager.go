@@ -86,7 +86,9 @@ func (s *ManagerService) Process(cmd Manager) {
 			shouldNotify = true
 		}
 	case RetrieveTags:
-		res = s.tags
+		// Make a copy of tags before releasing the lock to avoid data races
+		res = make(llrp.Tags, len(s.tags))
+		copy(res, s.tags)
 	}
 	cmd.Tags = res
 	s.mu.Unlock()
@@ -103,7 +105,10 @@ func (s *ManagerService) Process(cmd Manager) {
 func (s *ManagerService) GetTags() llrp.Tags {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.tags
+	// Make a copy to avoid exposing the internal backing array
+	tags := make(llrp.Tags, len(s.tags))
+	copy(tags, s.tags)
+	return tags
 }
 
 // SetTags replaces the current tag collection with the provided tags.

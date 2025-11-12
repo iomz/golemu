@@ -7,6 +7,7 @@ package connection
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -106,17 +107,16 @@ func (s *Simulator) Run() int {
 	atomic.AddUint32(s.currentMessageID, 1)
 
 	eventCycle := 0
-	tags, err := s.loadTagsForNextEventCycle(simulationFiles, &eventCycle)
-	if err != nil {
-		log.Fatal(err)
-	}
-	eventCycle++
-	trds := tags.BuildTagReportDataStack(s.pdu)
 	roarTicker := time.NewTicker(time.Duration(s.reportInterval) * time.Millisecond)
+	var simulationDone chan struct{}
 
 	for {
 		hdr, _, err := ReadLLRPMessage(conn)
 		if err != nil {
+			if err == io.EOF || errors.Is(err, net.ErrClosed) {
+				log.Info("connection closed, exiting")
+				return 0
+			}
 			log.Fatalf("error reading LLRP message: %v", err)
 		}
 
@@ -127,11 +127,12 @@ func (s *Simulator) Run() int {
 			atomic.AddUint32(s.currentMessageID, 1)
 
 			if s.loopStarted.CompareAndSwap(false, true) {
-				done := s.startSimulationLoop(conn, simulationFiles, &eventCycle, trds, roarTicker)
+				simulationDone = s.startSimulationLoop(conn, simulationFiles, &eventCycle, roarTicker)
 				go func() {
-					<-done
-					log.Info("simulation loop terminated")
-					// Optional: close connection or set flag
+					<-simulationDone
+					log.Info("simulation loop terminated, closing connection")
+					roarTicker.Stop()
+					conn.Close()
 				}()
 			} else {
 				log.Warn("simulation loop already running; ignoring duplicate SET_READER_CONFIG")
@@ -177,7 +178,7 @@ func (s *Simulator) loadTagsForNextEventCycle(simulationFiles []string, eventCyc
 	return tags, nil
 }
 
-func (s *Simulator) startSimulationLoop(conn net.Conn, simulationFiles []string, eventCycle *int, trds llrp.TagReportDataStack, roarTicker *time.Ticker) chan struct{} {
+func (s *Simulator) startSimulationLoop(conn net.Conn, simulationFiles []string, eventCycle *int, roarTicker *time.Ticker) chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer s.loopStarted.Store(false)
@@ -190,7 +191,7 @@ func (s *Simulator) startSimulationLoop(conn net.Conn, simulationFiles []string,
 				continue
 			}
 			*eventCycle++
-			trds = tags.BuildTagReportDataStack(s.pdu)
+			trds := tags.BuildTagReportDataStack(s.pdu)
 
 			log.Infof("<<< Simulated Event Cycle %v, %v tags, %v roars", *eventCycle-1, len(tags), len(trds))
 			for _, trd := range trds {

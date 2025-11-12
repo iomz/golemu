@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -117,12 +118,15 @@ func TestHandler_HandleRequest_SetReaderConfig(t *testing.T) {
 	conn := &mockConn{reader: &buf, writer: &bytes.Buffer{}}
 
 	tags := llrp.Tags{}
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		handler.HandleRequest(conn, tags)
 	}()
 
-	// Give handler time to process
-	time.Sleep(100 * time.Millisecond)
+	// Wait for handler to process and finish
+	wg.Wait()
 
 	// Verify messageID was incremented
 	if *handler.currentMessageID < 1001 {
@@ -143,12 +147,15 @@ func TestHandler_HandleRequest_KeepaliveAck(t *testing.T) {
 	conn := &mockConn{reader: &buf, writer: &bytes.Buffer{}}
 
 	tags := llrp.Tags{}
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		handler.HandleRequest(conn, tags)
 	}()
 
-	// Give handler time to process
-	time.Sleep(100 * time.Millisecond)
+	// Wait for handler to process and finish
+	wg.Wait()
 
 	// Verify report loop was started
 	if !handler.reportLoopStarted.Load() {
@@ -233,7 +240,7 @@ func TestHandler_startReportLoop(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify initial report was sent
-	if writeBuf.Len() == 0 {
+	if conn.Len() == 0 {
 		t.Error("expected initial RO_ACCESS_REPORT to be sent")
 	}
 
@@ -243,7 +250,7 @@ func TestHandler_startReportLoop(t *testing.T) {
 	if !handler.reportLoopStarted.Load() {
 		// If it's not running, it might have already stopped due to an error
 		// Check if it was running by seeing if we got reports
-		if writeBuf.Len() == 0 {
+		if conn.Len() == 0 {
 			t.Error("expected report loop to be running or to have sent reports")
 		}
 	}
@@ -284,7 +291,7 @@ func TestHandler_startReportLoop_WithKeepalive(t *testing.T) {
 	time.Sleep(1200 * time.Millisecond)
 
 	// Verify keepalive was sent
-	if writeBuf.Len() == 0 {
+	if conn.Len() == 0 {
 		t.Error("expected KEEP_ALIVE to be sent")
 	}
 
