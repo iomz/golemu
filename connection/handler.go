@@ -21,18 +21,20 @@ type Handler struct {
 	reportInterval    int
 	keepaliveInterval int
 	isConnAlive       *atomic.Bool
+	reportLoopStarted *atomic.Bool
 	tagUpdatedChan    chan llrp.Tags
 }
 
 // NewHandler creates a new LLRP handler
-func NewHandler(initialMessageID int, pdu, reportInterval, keepaliveInterval int, tagUpdatedChan chan llrp.Tags) *Handler {
+func NewHandler(initialMessageID int, pdu, reportInterval, keepaliveInterval int, tagUpdatedChan chan llrp.Tags, isConnAlive *atomic.Bool) *Handler {
 	msgID := uint32(initialMessageID)
 	return &Handler{
 		currentMessageID:  &msgID,
 		pdu:               pdu,
 		reportInterval:    reportInterval,
 		keepaliveInterval: keepaliveInterval,
-		isConnAlive:       &atomic.Bool{},
+		isConnAlive:       isConnAlive,
+		reportLoopStarted: &atomic.Bool{},
 		tagUpdatedChan:    tagUpdatedChan,
 	}
 }
@@ -54,22 +56,25 @@ func (h *Handler) HandleRequest(conn net.Conn, tags llrp.Tags) {
 			return
 		}
 
-		if hdr.Header == llrp.SetReaderConfigHeader || hdr.Header == llrp.KeepaliveAckHeader {
-			if hdr.Header == llrp.SetReaderConfigHeader {
-				log.Info(">>> SET_READER_CONFIG")
-				if _, err := conn.Write(llrp.SetReaderConfigResponse(*h.currentMessageID)); err != nil {
-					log.Warnf("error writing SET_READER_CONFIG_RESPONSE: %v", err)
-					conn.Close()
-					return
-				}
-				atomic.AddUint32(h.currentMessageID, 1)
-				log.Info("<<< SET_READER_CONFIG_RESPONSE")
-			} else if hdr.Header == llrp.KeepaliveAckHeader {
-				log.Info(">>> KEEP_ALIVE_ACK")
+		switch hdr.Header {
+		case llrp.SetReaderConfigHeader:
+			log.Info(">>> SET_READER_CONFIG")
+			if _, err := conn.Write(llrp.SetReaderConfigResponse(*h.currentMessageID)); err != nil {
+				log.Warnf("error writing SET_READER_CONFIG_RESPONSE: %v", err)
+				conn.Close()
+				return
 			}
-
-			h.startReportLoop(conn, trds)
-		} else {
+			atomic.AddUint32(h.currentMessageID, 1)
+			log.Info("<<< SET_READER_CONFIG_RESPONSE")
+			if h.reportLoopStarted.CompareAndSwap(false, true) {
+				h.startReportLoop(conn, trds)
+			}
+		case llrp.KeepaliveAckHeader:
+			log.Info(">>> KEEP_ALIVE_ACK")
+			if h.reportLoopStarted.CompareAndSwap(false, true) {
+				h.startReportLoop(conn, trds)
+			}
+		default:
 			log.Warnf("unknown header: %v", hdr.Header)
 			return
 		}
@@ -84,6 +89,7 @@ func (h *Handler) startReportLoop(conn net.Conn, trds llrp.TagReportDataStack) {
 	}
 
 	go func() {
+		defer h.reportLoopStarted.Store(false)
 		// Initial ROAR message
 		log.WithFields(log.Fields{
 			"Reports":    len(trds),

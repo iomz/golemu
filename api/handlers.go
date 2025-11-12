@@ -63,6 +63,33 @@ func (h *Handler) GetTags(c *gin.Context) {
 }
 
 func (h *Handler) reqAddTag(req []llrp.TagRecord) string {
+	validTags := []*llrp.Tag{}
+	for _, t := range req {
+		tagObj, err := llrp.NewTag(&llrp.TagRecord{
+			PCBits: t.PCBits,
+			EPC:    t.EPC,
+		})
+		if err != nil {
+			log.Errorf("error creating tag: %v", err)
+			return "error"
+		}
+
+		validTags = append(validTags, tagObj)
+	}
+
+	for _, tagObj := range validTags {
+		add := tag.Manager{
+			Action: tag.AddTags,
+			Tags:   []*llrp.Tag{tagObj},
+		}
+		h.tagManagerChan <- add
+	}
+
+	log.Debugf("add %v", req)
+	return "add"
+}
+
+func (h *Handler) reqDeleteTag(req []llrp.TagRecord) string {
 	hasError := false
 	for _, t := range req {
 		tagObj, err := llrp.NewTag(&llrp.TagRecord{
@@ -75,31 +102,6 @@ func (h *Handler) reqAddTag(req []llrp.TagRecord) string {
 			continue
 		}
 
-		add := tag.Manager{
-			Action: tag.AddTags,
-			Tags:   []*llrp.Tag{tagObj},
-		}
-		h.tagManagerChan <- add
-	}
-
-	if hasError {
-		return "error"
-	}
-	log.Debugf("add %v", req)
-	return "add"
-}
-
-func (h *Handler) reqDeleteTag(req []llrp.TagRecord) string {
-	for _, t := range req {
-		tagObj, err := llrp.NewTag(&llrp.TagRecord{
-			PCBits: t.PCBits,
-			EPC:    t.EPC,
-		})
-		if err != nil {
-			log.Error(err)
-			continue
-		}
-
 		deleteCmd := tag.Manager{
 			Action: tag.DeleteTags,
 			Tags:   []*llrp.Tag{tagObj},
@@ -107,6 +109,9 @@ func (h *Handler) reqDeleteTag(req []llrp.TagRecord) string {
 		h.tagManagerChan <- deleteCmd
 	}
 
+	if hasError {
+		return "error"
+	}
 	log.Debugf("delete %v", req)
 	return "delete"
 }

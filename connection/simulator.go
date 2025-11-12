@@ -5,6 +5,7 @@
 package connection
 
 import (
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
@@ -45,7 +46,7 @@ func NewSimulator(ip string, port, pdu, reportInterval int, simulationDir string
 }
 
 // Run starts the simulator
-func (s *Simulator) Run() {
+func (s *Simulator) Run() int {
 	simulationFiles, err := s.loadSimulationFiles()
 	if err != nil {
 		log.Fatal(err)
@@ -62,7 +63,8 @@ func (s *Simulator) Run() {
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-signals
-		log.Fatal(sig)
+		log.Infof("received signal %v, shutting down...", sig)
+		os.Exit(0)
 	}()
 
 	log.Info("waiting for LLRP connection...")
@@ -107,6 +109,7 @@ func (s *Simulator) Run() {
 			log.Warnf(">>> header: %v", hdr.Header)
 		}
 	}
+	return 0
 }
 
 func (s *Simulator) loadSimulationFiles() ([]string, error) {
@@ -125,7 +128,7 @@ func (s *Simulator) loadSimulationFiles() ([]string, error) {
 		}
 	}
 	if len(simulationFiles) == 0 {
-		log.Fatalf("no event cycle file found in %s", s.simulationDir)
+		return nil, fmt.Errorf("no event cycle file found in %s", s.simulationDir)
 	}
 	return simulationFiles, nil
 }
@@ -144,13 +147,12 @@ func (s *Simulator) loadTagsForNextEventCycle(simulationFiles []string, eventCyc
 	return tags, nil
 }
 
-func (s *Simulator) startSimulationLoop(conn net.Conn, simulationFiles []string, eventCycle *int, trds llrp.TagReportDataStack, roarTicker *time.Ticker) {
+func (s *Simulator) startSimulationLoop(conn net.Conn, simulationFiles []string, eventCycle *int, trds llrp.TagReportDataStack, roarTicker *time.Ticker) chan struct{} {
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		for {
-			_, ok := <-roarTicker.C
-			if !ok {
-				log.Fatal("roarTicker died")
-			}
+			<-roarTicker.C
 			tags, err := s.loadTagsForNextEventCycle(simulationFiles, eventCycle)
 			if err != nil {
 				log.Warn(err)
@@ -170,4 +172,5 @@ func (s *Simulator) startSimulationLoop(conn net.Conn, simulationFiles []string,
 			}
 		}
 	}()
+	return done
 }

@@ -43,7 +43,7 @@ func NewServer(ip string, port, apiPort, pdu, reportInterval, keepaliveInterval,
 	tagUpdatedChan := make(chan llrp.Tags)
 	isConnAlive := &atomic.Bool{}
 	tagService := tag.NewManagerService(tagManagerChan, tagUpdatedChan, isConnAlive)
-	llrpHandler := connection.NewHandler(initialMessageID, pdu, reportInterval, keepaliveInterval, tagUpdatedChan)
+	llrpHandler := connection.NewHandler(initialMessageID, pdu, reportInterval, keepaliveInterval, tagUpdatedChan, isConnAlive)
 
 	return &Server{
 		ip:                ip,

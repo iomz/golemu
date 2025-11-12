@@ -6,6 +6,7 @@ package connection
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 )
@@ -52,8 +53,14 @@ func ReadLLRPMessage(conn net.Conn) (*LLRPHeader, []byte, error) {
 		return nil, nil, err
 	}
 
+	// guard against malicious or malformed LLRP packets
+	if hdr.Length < LLRPHeaderSize {
+		return nil, nil, fmt.Errorf("invalid LLRP message length: %d (must be at least %d)", hdr.Length, LLRPHeaderSize)
+	}
+
 	var messageValue []byte
-	if messageSize := hdr.Length - LLRPHeaderSize; messageSize > 0 {
+	messageSize := hdr.Length - LLRPHeaderSize
+	if messageSize > 0 {
 		messageValue = make([]byte, messageSize)
 		if _, err = io.ReadFull(conn, messageValue); err != nil {
 			return nil, nil, err

@@ -56,7 +56,6 @@ func main() {
 			cfg.SimulationDir,
 			cfg.InitialMessageID,
 		)
-		sim.Run()
+		os.Exit(sim.Run())
 	}
 }
-
