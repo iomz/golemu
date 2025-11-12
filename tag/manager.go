@@ -1,0 +1,79 @@
+//
+// Use of this source code is governed by The MIT License
+// that can be found in the LICENSE file.
+
+package tag
+
+import (
+	"sync"
+	"sync/atomic"
+
+	"github.com/iomz/go-llrp"
+)
+
+// ManagerService handles tag management operations
+type ManagerService struct {
+	tags           llrp.Tags
+	tagManagerChan chan Manager
+	tagUpdatedChan chan llrp.Tags
+	isConnAlive    *atomic.Bool
+	mu             sync.Mutex
+}
+
+// NewManagerService creates a new tag manager service
+func NewManagerService(tagManagerChan chan Manager, tagUpdatedChan chan llrp.Tags, isConnAlive *atomic.Bool) *ManagerService {
+	return &ManagerService{
+		tags:           llrp.Tags{},
+		tagManagerChan: tagManagerChan,
+		tagUpdatedChan: tagUpdatedChan,
+		isConnAlive:    isConnAlive,
+	}
+}
+
+// Process handles tag management commands
+func (s *ManagerService) Process(cmd Manager) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	res := []*llrp.Tag{}
+	switch cmd.Action {
+	case AddTags:
+		for _, t := range cmd.Tags {
+			if i := s.tags.GetIndexOf(t); i < 0 {
+				s.tags = append(s.tags, t)
+				res = append(res, t)
+				if s.isConnAlive.Load() {
+					s.tagUpdatedChan <- s.tags
+				}
+			}
+		}
+	case DeleteTags:
+		for _, t := range cmd.Tags {
+			if i := s.tags.GetIndexOf(t); i >= 0 {
+				s.tags = append(s.tags[:i], s.tags[i+1:]...)
+				res = append(res, t)
+				if s.isConnAlive.Load() {
+					s.tagUpdatedChan <- s.tags
+				}
+			}
+		}
+	case RetrieveTags:
+		res = s.tags
+	}
+	cmd.Tags = res
+	s.tagManagerChan <- cmd
+}
+
+// GetTags returns the current tags
+func (s *ManagerService) GetTags() llrp.Tags {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tags
+}
+
+// SetTags sets the tags
+func (s *ManagerService) SetTags(tags llrp.Tags) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tags = tags
+}

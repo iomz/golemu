@@ -20,12 +20,35 @@ Mizutani, I., & Mitsugi, J. (2016). A Multicode and Portable RFID Tag Events Emu
 
 # Installation
 
-Install [dep](https://github.com/golang/dep) in your system first.
+## From Source
 
+```bash
+# Install the latest version
+go install github.com/iomz/golemu/cmd/golemu@latest
+
+# Or install from a local clone
+git clone https://github.com/iomz/golemu.git
+cd golemu
+go install ./cmd/golemu
+
+# Verify installation
+golemu --help
 ```
-$ go get github.com/iomz/golemu
-$ cd $GOPATH/src/github.com/iomz/golemu
-$ dep ensure && go install .
+
+**Note:** Make sure `$GOPATH/bin` or `$HOME/go/bin` is in your `PATH` environment variable to use the `golemu` command directly.
+
+## Build Locally
+
+```bash
+# Clone the repository
+git clone https://github.com/iomz/golemu.git
+cd golemu
+
+# Build the binary
+go build -o golemu ./cmd/golemu
+
+# Run directly
+./golemu --help
 ```
 
 # Synopsis
@@ -98,4 +121,4 @@ See the LICENSE file.
 
 ## Author
 
-Iori Mizutani (iomz)
+Iori Mizutani (@iomz)
