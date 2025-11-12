@@ -14,7 +14,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Handler handles LLRP connections
+// Handler manages LLRP protocol connections and handles incoming requests from LLRP clients.
+// It processes SET_READER_CONFIG and KEEP_ALIVE_ACK messages, sends RO_ACCESS_REPORT messages
+// at regular intervals, and manages keepalive messages to maintain the connection.
 type Handler struct {
 	currentMessageID  *uint32
 	pdu               int
@@ -25,7 +27,15 @@ type Handler struct {
 	tagUpdatedChan    chan llrp.Tags
 }
 
-// NewHandler creates a new LLRP handler
+// NewHandler creates and initializes a new LLRP handler with the specified configuration.
+//
+// Parameters:
+//   - initialMessageID: The starting message ID for LLRP messages
+//   - pdu: Maximum Protocol Data Unit size in bytes
+//   - reportInterval: Interval in milliseconds between RO_ACCESS_REPORT messages
+//   - keepaliveInterval: Interval in seconds for keepalive messages (0 to disable)
+//   - tagUpdatedChan: Channel for receiving tag updates
+//   - isConnAlive: Atomic boolean flag indicating connection status
 func NewHandler(initialMessageID int, pdu, reportInterval, keepaliveInterval int, tagUpdatedChan chan llrp.Tags, isConnAlive *atomic.Bool) *Handler {
 	msgID := uint32(initialMessageID)
 	return &Handler{
@@ -39,7 +49,14 @@ func NewHandler(initialMessageID int, pdu, reportInterval, keepaliveInterval int
 	}
 }
 
-// HandleRequest handles incoming LLRP requests
+// HandleRequest processes incoming LLRP requests from a client connection.
+// It reads messages from the connection, handles SET_READER_CONFIG and KEEP_ALIVE_ACK messages,
+// and starts the report loop when appropriate. The function runs until the connection is closed
+// or an error occurs.
+//
+// Parameters:
+//   - conn: The network connection to the LLRP client
+//   - tags: Initial set of tags to include in reports
 func (h *Handler) HandleRequest(conn net.Conn, tags llrp.Tags) {
 	defer conn.Close()
 	trds := tags.BuildTagReportDataStack(h.pdu)
@@ -147,7 +164,11 @@ func (h *Handler) startReportLoop(conn net.Conn, trds llrp.TagReportDataStack) {
 	}()
 }
 
-// SendReaderEventNotification sends a READER_EVENT_NOTIFICATION message
+// SendReaderEventNotification sends a READER_EVENT_NOTIFICATION message to the client
+// to indicate that the reader is ready to accept connections.
+// This is typically the first message sent after establishing an LLRP connection.
+//
+// Returns an error if the message cannot be written to the connection.
 func (h *Handler) SendReaderEventNotification(conn net.Conn) error {
 	currentTime := uint64(time.Now().UTC().Nanosecond() / 1000)
 	if _, err := conn.Write(llrp.ReaderEventNotification(*h.currentMessageID, currentTime)); err != nil {
@@ -158,7 +179,8 @@ func (h *Handler) SendReaderEventNotification(conn net.Conn) error {
 	return nil
 }
 
-// IsConnAlive returns whether the connection is alive
+// IsConnAlive returns the current connection status.
+// It returns true if the connection is active and false otherwise.
 func (h *Handler) IsConnAlive() bool {
 	return h.isConnAlive.Load()
 }

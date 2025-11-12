@@ -14,19 +14,26 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Handler handles API requests
+// Handler processes HTTP API requests for tag management operations.
+// It provides REST endpoints for adding, deleting, and retrieving tags.
 type Handler struct {
 	tagManagerChan chan tag.Manager
 }
 
-// NewHandler creates a new API handler
+// NewHandler creates a new API handler with the specified tag management channel.
+//
+// Parameters:
+//   - tagManagerChan: Channel for sending tag management commands
 func NewHandler(tagManagerChan chan tag.Manager) *Handler {
 	return &Handler{
 		tagManagerChan: tagManagerChan,
 	}
 }
 
-// PostTag handles tag addition requests
+// PostTag handles HTTP POST requests to add new tags.
+// It expects a JSON array of TagRecord objects in the request body.
+// Returns 201 Created on success, 400 Bad Request for invalid JSON,
+// or 409 Conflict if one or more tags already exist.
 func (h *Handler) PostTag(c *gin.Context) {
 	var json []llrp.TagRecord
 	if err := c.ShouldBindJSON(&json); err != nil {
@@ -41,7 +48,10 @@ func (h *Handler) PostTag(c *gin.Context) {
 	}
 }
 
-// DeleteTag handles tag deletion requests
+// DeleteTag handles HTTP DELETE requests to remove tags.
+// It expects a JSON array of TagRecord objects in the request body.
+// Returns 200 OK on success, 400 Bad Request for invalid JSON,
+// or 404 Not Found if one or more tags do not exist.
 func (h *Handler) DeleteTag(c *gin.Context) {
 	var json []llrp.TagRecord
 	if err := c.ShouldBindJSON(&json); err != nil {
@@ -56,7 +66,8 @@ func (h *Handler) DeleteTag(c *gin.Context) {
 	}
 }
 
-// GetTags handles tag retrieval requests
+// GetTags handles HTTP GET requests to retrieve all tags.
+// Returns 200 OK with a JSON array of all currently stored tags.
 func (h *Handler) GetTags(c *gin.Context) {
 	tagList := h.reqRetrieveTag()
 	c.JSON(http.StatusOK, tagList)

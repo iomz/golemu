@@ -6,20 +6,21 @@ package tag
 
 import "github.com/iomz/go-llrp"
 
-// ManagementAction is a type for TagManager
+// ManagementAction represents the type of operation to perform on tags.
 type ManagementAction int
 
 const (
-	// RetrieveTags is a const for retrieving tags
+	// RetrieveTags retrieves all currently stored tags.
 	RetrieveTags ManagementAction = iota
-	// AddTags is a const for adding tags
+	// AddTags adds new tags to the collection (duplicates are ignored).
 	AddTags
-	// DeleteTags is a const for deleting tags
+	// DeleteTags removes specified tags from the collection.
 	DeleteTags
 )
 
-// Manager is a struct for tag management channel
+// Manager represents a tag management command sent through the management channel.
+// It specifies the action to perform and the tags to operate on.
 type Manager struct {
-	Action ManagementAction
-	Tags   llrp.Tags
+	Action ManagementAction // The operation to perform
+	Tags   llrp.Tags        // Tags to add, delete, or empty for retrieve
 }

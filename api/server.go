@@ -11,13 +11,18 @@ import (
 	"github.com/iomz/golemu/tag"
 )
 
-// Server represents the API server
+// Server provides an HTTP API server for tag management operations.
+// It exposes REST endpoints for adding, deleting, and retrieving tags.
 type Server struct {
 	handler *Handler
 	port    int
 }
 
-// NewServer creates a new API server
+// NewServer creates and initializes a new API server.
+//
+// Parameters:
+//   - port: Port number to listen on
+//   - tagManagerChan: Channel for tag management operations
 func NewServer(port int, tagManagerChan chan tag.Manager) *Server {
 	return &Server{
 		handler: NewHandler(tagManagerChan),
@@ -25,7 +30,11 @@ func NewServer(port int, tagManagerChan chan tag.Manager) *Server {
 	}
 }
 
-// Start starts the API server
+// Start starts the HTTP API server and begins listening for requests.
+// It registers routes for POST /api/v1/tags, DELETE /api/v1/tags, and GET /api/v1/tags.
+// The server runs until an error occurs or it is stopped.
+//
+// Returns an error if the server cannot start or encounters a fatal error.
 func (s *Server) Start() error {
 	r := gin.Default()
 	v1 := r.Group("api/v1")

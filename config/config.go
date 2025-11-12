@@ -40,7 +40,8 @@ var (
 	SimulationDir = Simulator.Arg("simulationDir", "The directory contains tags for each event cycle.").Required().String()
 )
 
-// Config holds the application configuration
+// Config holds all application configuration values parsed from command-line flags.
+// It provides a structured way to access configuration throughout the application.
 type Config struct {
 	Debug              bool
 	InitialMessageID   int
@@ -55,7 +56,10 @@ type Config struct {
 	SimulationDir      string
 }
 
-// GetConfig returns the parsed configuration
+// GetConfig returns the current application configuration parsed from command-line flags.
+// It should be called after kingpin.Parse() to ensure all flags are populated.
+//
+// Returns a Config struct containing all configuration values.
 func GetConfig() *Config {
 	return &Config{
 		Debug:              *Debug,

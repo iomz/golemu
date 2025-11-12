@@ -23,7 +23,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Simulator handles LLRP simulation mode
+// Simulator implements an LLRP simulator mode that loads tag data from files
+// organized by event cycle and sends RO_ACCESS_REPORT messages simulating
+// RFID reader behavior over time.
 type Simulator struct {
 	ip               string
 	port             int
@@ -34,7 +36,15 @@ type Simulator struct {
 	loopStarted      *atomic.Bool
 }
 
-// NewSimulator creates a new simulator
+// NewSimulator creates a new simulator instance with the specified configuration.
+//
+// Parameters:
+//   - ip: IP address to listen on
+//   - port: Port number to listen on
+//   - pdu: Maximum Protocol Data Unit size in bytes
+//   - reportInterval: Interval in milliseconds between RO_ACCESS_REPORT messages
+//   - simulationDir: Directory containing .gob files for each event cycle
+//   - initialMessageID: Starting message ID for LLRP messages
 func NewSimulator(ip string, port, pdu, reportInterval int, simulationDir string, initialMessageID int) *Simulator {
 	msgID := uint32(initialMessageID)
 	return &Simulator{
@@ -48,7 +58,12 @@ func NewSimulator(ip string, port, pdu, reportInterval int, simulationDir string
 	}
 }
 
-// Run starts the simulator
+// Run starts the simulator and begins listening for LLRP connections.
+// It loads simulation files from the configured directory, waits for a client connection,
+// sends a READER_EVENT_NOTIFICATION, and then processes incoming LLRP messages.
+// The simulator cycles through event files, sending tag reports at the configured interval.
+//
+// Returns 0 on normal shutdown, non-zero on error.
 func (s *Simulator) Run() int {
 	simulationFiles, err := s.loadSimulationFiles()
 	if err != nil {
@@ -112,7 +127,12 @@ func (s *Simulator) Run() int {
 			atomic.AddUint32(s.currentMessageID, 1)
 
 			if s.loopStarted.CompareAndSwap(false, true) {
-				s.startSimulationLoop(conn, simulationFiles, &eventCycle, trds, roarTicker)
+				done := s.startSimulationLoop(conn, simulationFiles, &eventCycle, trds, roarTicker)
+				go func() {
+					<-done
+					log.Info("simulation loop terminated")
+					// Optional: close connection or set flag
+				}()
 			} else {
 				log.Warn("simulation loop already running; ignoring duplicate SET_READER_CONFIG")
 			}
@@ -120,7 +140,6 @@ func (s *Simulator) Run() int {
 			log.Warnf(">>> header: %v", hdr.Header)
 		}
 	}
-	return 0
 }
 
 func (s *Simulator) loadSimulationFiles() ([]string, error) {

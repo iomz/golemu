@@ -12,18 +12,23 @@ import (
 )
 
 const (
-	// LLRPHeaderSize is the size of the LLRP message header (2 bytes header + 4 bytes length + 4 bytes messageID)
+	// LLRPHeaderSize is the size of the LLRP message header in bytes.
+	// The header consists of: 2 bytes (message type) + 4 bytes (message length) + 4 bytes (message ID).
 	LLRPHeaderSize = 10
 )
 
-// LLRPHeader represents an LLRP message header
+// LLRPHeader represents the header portion of an LLRP message.
+// It contains the message type, total message length, and unique message identifier.
 type LLRPHeader struct {
-	Header    uint16
-	Length    uint32
-	MessageID uint32
+	Header    uint16 // Message type identifier
+	Length    uint32 // Total message length including header
+	MessageID uint32 // Unique message identifier
 }
 
-// ReadLLRPHeader reads the LLRP header from a connection
+// ReadLLRPHeader reads and parses an LLRP message header from the connection.
+// It reads exactly 10 bytes and decodes them according to the LLRP protocol specification.
+//
+// Returns the parsed header or an error if the header cannot be read.
 func ReadLLRPHeader(conn net.Conn) (*LLRPHeader, error) {
 	header := make([]byte, 2)
 	length := make([]byte, 4)
@@ -46,7 +51,12 @@ func ReadLLRPHeader(conn net.Conn) (*LLRPHeader, error) {
 	}, nil
 }
 
-// ReadLLRPMessage reads a complete LLRP message including header and body
+// ReadLLRPMessage reads a complete LLRP message including header and body from the connection.
+// It validates the message length to prevent malicious or malformed packets, then reads
+// the message body based on the length specified in the header.
+//
+// Returns the parsed header, message body bytes, and an error if the message cannot be read
+// or if the message length is invalid.
 func ReadLLRPMessage(conn net.Conn) (*LLRPHeader, []byte, error) {
 	hdr, err := ReadLLRPHeader(conn)
 	if err != nil {

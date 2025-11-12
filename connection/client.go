@@ -14,13 +14,19 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Client handles LLRP client connections
+// Client represents an LLRP client that connects to an LLRP server (reader/interrogator)
+// and receives RFID tag events. It handles READER_EVENT_NOTIFICATION, KEEP_ALIVE,
+// SET_READER_CONFIG_RESPONSE, and RO_ACCESS_REPORT messages.
 type Client struct {
 	ip   string
 	port int
 }
 
-// NewClient creates a new LLRP client
+// NewClient creates a new LLRP client configured to connect to the specified server.
+//
+// Parameters:
+//   - ip: The IP address of the LLRP server
+//   - port: The port number of the LLRP server
 func NewClient(ip string, port int) *Client {
 	return &Client{
 		ip:   ip,
@@ -28,7 +34,11 @@ func NewClient(ip string, port int) *Client {
 	}
 }
 
-// Run starts the client and connects to the LLRP server
+// Run starts the client and establishes a connection to the LLRP server.
+// It continuously retries connection attempts until successful, then processes
+// incoming LLRP messages until the connection is closed.
+//
+// Returns 0 on normal shutdown, 1 on error.
 func (c *Client) Run() int {
 	log.Infof("waiting for %s:%d ...", c.ip, c.port)
 	conn, err := net.Dial("tcp", c.ip+":"+strconv.Itoa(c.port))

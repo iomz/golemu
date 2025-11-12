@@ -20,7 +20,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Server represents the LLRP server
+// Server implements an LLRP tag stream server that manages RFID tag inventory
+// and communicates with LLRP clients. It loads tags from a file, provides an HTTP API
+// for tag management, and sends RO_ACCESS_REPORT messages to connected clients.
 type Server struct {
 	ip                string
 	port              int
@@ -37,7 +39,17 @@ type Server struct {
 	llrpHandler       *connection.Handler
 }
 
-// NewServer creates a new LLRP server
+// NewServer creates and initializes a new LLRP server with the specified configuration.
+//
+// Parameters:
+//   - ip: IP address to listen on for LLRP connections
+//   - port: Port number for LLRP connections
+//   - apiPort: Port number for the HTTP API server
+//   - pdu: Maximum Protocol Data Unit size in bytes
+//   - reportInterval: Interval in milliseconds between RO_ACCESS_REPORT messages
+//   - keepaliveInterval: Interval in seconds for keepalive messages (0 to disable)
+//   - initialMessageID: Starting message ID for LLRP messages
+//   - file: Path to the gob file containing initial tag data
 func NewServer(ip string, port, apiPort, pdu, reportInterval, keepaliveInterval, initialMessageID int, file string) *Server {
 	tagManagerChan := make(chan tag.Manager)
 	tagUpdatedChan := make(chan llrp.Tags)
@@ -62,7 +74,12 @@ func NewServer(ip string, port, apiPort, pdu, reportInterval, keepaliveInterval,
 	}
 }
 
-// Run starts the server
+// Run starts the LLRP server and begins accepting connections.
+// It loads tags from the configured file, starts the HTTP API server,
+// starts the tag manager service, and then listens for LLRP client connections.
+// The server runs until terminated by a signal or error.
+//
+// Returns 0 on normal shutdown, non-zero on error.
 func (s *Server) Run() int {
 	s.loadTags()
 
