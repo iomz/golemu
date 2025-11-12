@@ -59,9 +59,12 @@ func ReadLLRPMessage(conn net.Conn) (*LLRPHeader, []byte, error) {
 	}
 
 	var messageValue []byte
-	messageSize := hdr.Length - LLRPHeaderSize
+	messageSize := int64(hdr.Length) - int64(LLRPHeaderSize)
+	if messageSize > int64(int(^uint(0)>>1)) {
+		return nil, nil, fmt.Errorf("invalid LLRP body length: %d exceeds host capacity", hdr.Length)
+	}
 	if messageSize > 0 {
-		messageValue = make([]byte, messageSize)
+		messageValue = make([]byte, int(messageSize))
 		if _, err = io.ReadFull(conn, messageValue); err != nil {
 			return nil, nil, err
 		}

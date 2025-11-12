@@ -32,9 +32,10 @@ func NewManagerService(tagManagerChan chan Manager, tagUpdatedChan chan llrp.Tag
 
 // Process handles tag management commands
 func (s *ManagerService) Process(cmd Manager) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	var tagsToNotify llrp.Tags
+	var shouldNotify bool
 
+	s.mu.Lock()
 	res := []*llrp.Tag{}
 	switch cmd.Action {
 	case AddTags:
@@ -42,25 +43,37 @@ func (s *ManagerService) Process(cmd Manager) {
 			if i := s.tags.GetIndexOf(t); i < 0 {
 				s.tags = append(s.tags, t)
 				res = append(res, t)
-				if s.isConnAlive.Load() {
-					s.tagUpdatedChan <- s.tags
-				}
 			}
+		}
+		if len(res) > 0 && s.isConnAlive.Load() {
+			// Make a copy of tags before releasing the lock
+			tagsToNotify = make(llrp.Tags, len(s.tags))
+			copy(tagsToNotify, s.tags)
+			shouldNotify = true
 		}
 	case DeleteTags:
 		for _, t := range cmd.Tags {
 			if i := s.tags.GetIndexOf(t); i >= 0 {
 				s.tags = append(s.tags[:i], s.tags[i+1:]...)
 				res = append(res, t)
-				if s.isConnAlive.Load() {
-					s.tagUpdatedChan <- s.tags
-				}
 			}
+		}
+		if len(res) > 0 && s.isConnAlive.Load() {
+			// Make a copy of tags before releasing the lock
+			tagsToNotify = make(llrp.Tags, len(s.tags))
+			copy(tagsToNotify, s.tags)
+			shouldNotify = true
 		}
 	case RetrieveTags:
 		res = s.tags
 	}
 	cmd.Tags = res
+	s.mu.Unlock()
+
+	// Send to channels without holding the lock to avoid deadlock
+	if shouldNotify {
+		s.tagUpdatedChan <- tagsToNotify
+	}
 	s.tagManagerChan <- cmd
 }
 

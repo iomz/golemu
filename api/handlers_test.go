@@ -136,6 +136,12 @@ func TestHandler_GetTags_Success(t *testing.T) {
 	tagManagerChan := make(chan tag.Manager, 10)
 	handler := NewHandler(tagManagerChan)
 
+	// Create tags before starting goroutine so we can handle errors properly
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
+
 	// Set up a goroutine to handle the retrieve request
 	// This simulates the tag manager service responding
 	ready := make(chan bool)
@@ -143,7 +149,6 @@ func TestHandler_GetTags_Success(t *testing.T) {
 		close(ready) // Signal that goroutine is ready
 		cmd := <-tagManagerChan
 		if cmd.Action == tag.RetrieveTags {
-			tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
 			cmd.Tags = []*llrp.Tag{tag1}
 			tagManagerChan <- cmd
 		}
@@ -234,6 +239,16 @@ func TestHandler_reqRetrieveTag(t *testing.T) {
 	tagManagerChan := make(chan tag.Manager, 10)
 	handler := NewHandler(tagManagerChan)
 
+	// Create tags before starting goroutine so we can handle errors properly
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
+	tag2, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101011"})
+	if err != nil {
+		t.Fatalf("failed to create tag2: %v", err)
+	}
+
 	// Set up a goroutine to handle the retrieve request
 	// This simulates the tag manager service responding
 	ready := make(chan bool)
@@ -241,8 +256,6 @@ func TestHandler_reqRetrieveTag(t *testing.T) {
 		close(ready) // Signal that goroutine is ready
 		cmd := <-tagManagerChan
 		if cmd.Action == tag.RetrieveTags {
-			tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
-			tag2, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101011"})
 			cmd.Tags = []*llrp.Tag{tag1, tag2}
 			tagManagerChan <- cmd
 		}

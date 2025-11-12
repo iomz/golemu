@@ -5,6 +5,7 @@
 package connection
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -30,6 +31,7 @@ type Simulator struct {
 	reportInterval   int
 	simulationDir    string
 	currentMessageID *uint32
+	loopStarted      *atomic.Bool
 }
 
 // NewSimulator creates a new simulator
@@ -42,6 +44,7 @@ func NewSimulator(ip string, port, pdu, reportInterval int, simulationDir string
 		reportInterval:   reportInterval,
 		simulationDir:    simulationDir,
 		currentMessageID: &msgID,
+		loopStarted:      &atomic.Bool{},
 	}
 }
 
@@ -64,12 +67,16 @@ func (s *Simulator) Run() int {
 	go func() {
 		sig := <-signals
 		log.Infof("received signal %v, shutting down...", sig)
-		os.Exit(0)
+		signal.Stop(signals)
+		l.Close()
 	}()
 
 	log.Info("waiting for LLRP connection...")
 	conn, err := l.Accept()
 	if err != nil {
+		if errors.Is(err, net.ErrClosed) {
+			return 0
+		}
 		log.Fatal(err)
 	}
 	defer conn.Close()
@@ -104,7 +111,11 @@ func (s *Simulator) Run() int {
 			}
 			atomic.AddUint32(s.currentMessageID, 1)
 
-			s.startSimulationLoop(conn, simulationFiles, &eventCycle, trds, roarTicker)
+			if s.loopStarted.CompareAndSwap(false, true) {
+				s.startSimulationLoop(conn, simulationFiles, &eventCycle, trds, roarTicker)
+			} else {
+				log.Warn("simulation loop already running; ignoring duplicate SET_READER_CONFIG")
+			}
 		} else {
 			log.Warnf(">>> header: %v", hdr.Header)
 		}
@@ -150,6 +161,7 @@ func (s *Simulator) loadTagsForNextEventCycle(simulationFiles []string, eventCyc
 func (s *Simulator) startSimulationLoop(conn net.Conn, simulationFiles []string, eventCycle *int, trds llrp.TagReportDataStack, roarTicker *time.Ticker) chan struct{} {
 	done := make(chan struct{})
 	go func() {
+		defer s.loopStarted.Store(false)
 		defer close(done)
 		for {
 			<-roarTicker.C

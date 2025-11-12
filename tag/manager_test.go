@@ -58,8 +58,14 @@ func TestManagerService_SetTags(t *testing.T) {
 
 	service := NewManagerService(tagManagerChan, tagUpdatedChan, isConnAlive)
 
-	tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
-	tag2, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101011"})
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
+	tag2, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101011"})
+	if err != nil {
+		t.Fatalf("failed to create tag2: %v", err)
+	}
 
 	tags := llrp.Tags{tag1, tag2}
 	service.SetTags(tags)
@@ -78,7 +84,10 @@ func TestManagerService_Process_AddTags(t *testing.T) {
 
 	service := NewManagerService(tagManagerChan, tagUpdatedChan, isConnAlive)
 
-	tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
 	cmd := Manager{
 		Action: AddTags,
 		Tags:   llrp.Tags{tag1},
@@ -124,7 +133,10 @@ func TestManagerService_Process_AddTags_Duplicate(t *testing.T) {
 
 	service := NewManagerService(tagManagerChan, tagUpdatedChan, isConnAlive)
 
-	tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
 
 	// Add tag first time
 	cmd1 := Manager{Action: AddTags, Tags: llrp.Tags{tag1}}
@@ -168,7 +180,10 @@ func TestManagerService_Process_DeleteTags(t *testing.T) {
 
 	service := NewManagerService(tagManagerChan, tagUpdatedChan, isConnAlive)
 
-	tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
 
 	// Add tag first
 	addCmd := Manager{Action: AddTags, Tags: llrp.Tags{tag1}}
@@ -214,7 +229,10 @@ func TestManagerService_Process_DeleteTags_NotFound(t *testing.T) {
 
 	service := NewManagerService(tagManagerChan, tagUpdatedChan, isConnAlive)
 
-	tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
 
 	// Try to delete non-existent tag
 	deleteCmd := Manager{Action: DeleteTags, Tags: llrp.Tags{tag1}}
@@ -245,8 +263,14 @@ func TestManagerService_Process_RetrieveTags(t *testing.T) {
 
 	service := NewManagerService(tagManagerChan, tagUpdatedChan, isConnAlive)
 
-	tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
-	tag2, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101011"})
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
+	tag2, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101011"})
+	if err != nil {
+		t.Fatalf("failed to create tag2: %v", err)
+	}
 
 	service.SetTags(llrp.Tags{tag1, tag2})
 
@@ -271,7 +295,10 @@ func TestManagerService_Process_NoUpdateWhenConnNotAlive(t *testing.T) {
 
 	service := NewManagerService(tagManagerChan, tagUpdatedChan, isConnAlive)
 
-	tag1, _ := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	tag1, err := llrp.NewTag(&llrp.TagRecord{PCBits: "3000", EPC: "001100000111001000100111011000100111111100101110101001001000000000000000000000000001110001101010"})
+	if err != nil {
+		t.Fatalf("failed to create tag1: %v", err)
+	}
 	cmd := Manager{Action: AddTags, Tags: llrp.Tags{tag1}}
 
 	service.Process(cmd)
