@@ -6,3 +6,6 @@
 *.swp
 sim/*
 vendor/*
+
+coverage.out
+golemu
