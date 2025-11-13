@@ -35,7 +35,7 @@ go install ./cmd/golemu
 golemu --help
 ```
 
-**Note:** Make sure `$GOPATH/bin` or `$HOME/go/bin` is in your `PATH` environment variable to use the `golemu` command directly.
+**Note:** Make sure `$GOBIN`, `$GOPATH/bin` or `$HOME/go/bin` is in your `PATH` environment variable to use the `golemu` command directly. When `$GOBIN` is set, go installs `golemu` there.
 
 ## Build Locally
 
@@ -57,11 +57,57 @@ golemu has 3 commands (`client`, `server`, and `simulator`) to operate in differ
 
 ## LLRP client mode(`golemu client`)
 
+```console
+% golemu client --help
+usage: golemu client
+
+Run as an LLRP client; connect to an LLRP server and receive events (test-only).
+
+Flags:
+      --help                   Show context-sensitive help (also try --help-long
+                               and --help-man).
+  -v, --debug                  Enable debug mode.
+      --initialMessageID=1000  The initial messageID to start from.
+      --initialKeepaliveID=80000
+                               The initial keepaliveID to start from.
+  -a, --ip=0.0.0.0             LLRP listening address.
+  -k, --keepalive=0            LLRP Keepalive interval.
+  -p, --port=5084              LLRP listening port.
+  -m, --pdu=1500               The maximum size of LLRP PDU.
+  -i, --reportInterval=10000   The interval of ROAccessReport in ms. Pseudo
+                               ROReport spec option.
+      --version                Show application version.
+```
+
 The client mode establishes an LLRP connection with an LLRP server (interrogator). Retry connecting to the server until it becomes online and keep receiving the events until the server closes the connection.
 
 This command is test-only; which means it only displays the number of events (TAG REPORT DATA parameter) in each received RO ACCESS REPORT message.
 
 ## LLRP server mode(`golemu server`)
+
+```console
+% golemu server --help
+usage: golemu server [<flags>]
+
+Run as an LLRP tag stream server.
+
+Flags:
+      --help                   Show context-sensitive help (also try --help-long
+                               and --help-man).
+  -v, --debug                  Enable debug mode.
+      --initialMessageID=1000  The initial messageID to start from.
+      --initialKeepaliveID=80000
+                               The initial keepaliveID to start from.
+  -a, --ip=0.0.0.0             LLRP listening address.
+  -k, --keepalive=0            LLRP Keepalive interval.
+  -p, --port=5084              LLRP listening port.
+  -m, --pdu=1500               The maximum size of LLRP PDU.
+  -i, --reportInterval=10000   The interval of ROAccessReport in ms. Pseudo
+                               ROReport spec option.
+      --version                Show application version.
+      --apiPort=3000           The port for the API endpoint.
+  -f, --file="tags.gob"        The file containing Tag data.
+```
 
 The server mode first loads tags from a file (`tags.gob` by default) to produce a "virtual inventory of tags." The gob encoded file speeds up the loading process of tags since it is critical for the emulation of hundreds to thousands of tags.
 
@@ -100,6 +146,31 @@ The resulting gob file of the above example (just 1 SGTIN-96 tag) should look li
 (TODO: API documentation for add/delete tags from the virtual tag population)
 
 ## Interrogation simulator mode(`golemu simulator`):
+
+```console
+% golemu simulator --help
+usage: golemu simulator <simulationDir>
+
+Run in the simulator mode.
+
+Flags:
+      --help                   Show context-sensitive help (also try --help-long
+                               and --help-man).
+  -v, --debug                  Enable debug mode.
+      --initialMessageID=1000  The initial messageID to start from.
+      --initialKeepaliveID=80000
+                               The initial keepaliveID to start from.
+  -a, --ip=0.0.0.0             LLRP listening address.
+  -k, --keepalive=0            LLRP Keepalive interval.
+  -p, --port=5084              LLRP listening port.
+  -m, --pdu=1500               The maximum size of LLRP PDU.
+  -i, --reportInterval=10000   The interval of ROAccessReport in ms. Pseudo
+                               ROReport spec option.
+      --version                Show application version.
+
+Args:
+  <simulationDir>  The directory contains tags for each event cycle.
+```
 
 The simulator mode also operates as an LLRP server (RFID interrogator) – the only difference is that it iterates through generated gob files in a directory. This mode is intended to simulate a batch of event cycles designed to evaluate specific situations.
 

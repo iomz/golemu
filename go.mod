@@ -5,7 +5,7 @@ go 1.23.2
 require (
 	github.com/fatih/structs v1.1.0
 	github.com/gin-gonic/gin v1.3.0
-	github.com/iomz/go-llrp v0.0.0-20190410202645-2a695d402856
+	github.com/iomz/go-llrp v0.1.0
 	github.com/sirupsen/logrus v1.4.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )

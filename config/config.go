@@ -12,7 +12,7 @@ import (
 
 var (
 	// Version is the current version
-	Version = "0.2.0"
+	Version = "0.5.1"
 
 	// App is the kingpin application
 	App = kingpin.New("golemu", "A mock LLRP-based logical reader emulator for RFID Tags.")
