@@ -1,5 +1,9 @@
 # golemu
 
+> [!IMPORTANT]
+> This project has moved to the [tagstrak monorepo](https://github.com/iomz/tagstrak).
+> New development continues there; this repository remains available for historical reference.
+
 [![Test](https://github.com/iomz/golemu/actions/workflows/test.yml/badge.svg)](https://github.com/iomz/golemu/actions/workflows/test.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/iomz/golemu)](https://goreportcard.com/report/github.com/iomz/golemu)
 [![codecov](https://codecov.io/gh/iomz/golemu/branch/main/graph/badge.svg?token=fN1tyc6ssX)](https://codecov.io/gh/iomz/golemu)
